@@ -1,0 +1,5 @@
+Pablo Motos es el jefe, CEO, el que pone la pasta, empresario, cantante, limpiador, saco de boxeo del Hoyo Wrestling. En la primera temporada tenía una cara menos visible, pero conforme las temporadas ha tenido más presencia, forma pareja de duelo algunas veces con Alex aunque él mismo no esté de acuerdo, ha ganado un Femboy Championship aunque se duda de la legalidad de él.
+
+Parece un meme luchando, pesa 49 kilos por lo que le mata lo que sea, aunque gracias a dios no suele ocurrir a menudo (pero ocurre) Pablo motos puede hacer aparecer un tanque, un casco de soldado romano, un maletín con dinero, una momia y un micrófono, es un meme andante.
+
+Su finisher es "La hora de pablo motos" Donde este le saca de la empresa y le expulsa, por lo que, aún sin ganar, si no puede competir no puede ganar! Si, así es pablo motos.

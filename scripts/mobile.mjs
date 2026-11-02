@@ -1,0 +1,28 @@
+import puppeteer from 'puppeteer-core';
+import { browserPath } from './browser.mjs';
+const exe = browserPath();
+const dir = process.argv[2];
+const portrait = process.argv[3] === 'portrait';
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const b = await puppeteer.launch({ executablePath: exe, headless: 'new', protocolTimeout: 90000, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--no-sandbox'] });
+const p = await b.newPage();
+const vp = portrait ? { width: 390, height: 844 } : { width: 844, height: 390 };
+await p.setViewport({ ...vp, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+await p.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+const logs = [];
+p.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message.slice(0, 300)));
+await p.goto('http://localhost:5173/?q=baja', { waitUntil: 'load' });
+await sleep(2500);
+const shot = (n) => p.screenshot({ path: `${dir}/mob_${portrait ? 'v' : 'h'}_${n}.png` });
+const click = (sel, i = 0) => p.evaluate((s, k) => document.querySelectorAll(s)[k]?.click(), sel, i);
+await shot('1_title');
+await click('.title'); await sleep(900); await shot('2_menu');
+await click('.menu-list button', 0); await sleep(1500); await click('.tile', 1); await sleep(500); await shot('3_versus');
+await click('.go'); await sleep(900);
+for (let i = 0; i < 12 && (await p.evaluate(() => !!document.querySelector('.dialogue'))); i++) { await p.evaluate(() => document.querySelector('.dbox').click()); await sleep(150); await p.evaluate(() => document.querySelector('.dbox')?.click()); await sleep(150); }
+await sleep(3500);
+await sleep(4500);
+await shot('4_combate');
+console.log('touch visible:', await p.evaluate(() => !document.querySelector('.touch-ui').classList.contains('hidden')));
+console.log(logs.join('\n') || 'sin errores');
+await b.close();
