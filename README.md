@@ -3,7 +3,14 @@
 > Inspirado en la obra original de **Jefefbi**.
 
 Juego de lucha libre en **3D** para navegador (PC y móvil), de **un jugador contra la CPU**.
-Modos: **Versus**, **Torneo** y **Espectador** (dos CPUs luchan con cámara de director y narrador). Historia y Supervivencia, próximamente.
+Modos: **Historia · Hoyo** (la ciudad de Hoyo y la Temporada 5 en un solo modo: los capítulos empiezan y acaban en la calle, con escenas y diálogos entre los vecinos y los luchadores), **Versus**, **Torneo**, **Supervivencia**, **Entrenamiento** y **Espectador** (dos CPUs luchan con cámara de director y narrador).
+
+El zoom de la página está bloqueado (pellizco, doble toque y Ctrl + rueda) para que el juego se vea siempre igual en el móvil.
+
+### Hoyo, la ciudad
+- Gente paseando (con bocadillos de lo que comentan según cómo vaya la historia), coches que frenan si te cruzas, luchadores entrenando por la calle, un ring de exhibición en la plaza con público y carteles con las caras de los luchadores.
+- Mapa (botón MAPA o tecla M) con calles, barrios, luchadores y la estrella dorada del siguiente capítulo; arriba siempre ves el objetivo con una flecha y la distancia.
+- El guion que une la ciudad con la historia (prólogo, llegada a cada capítulo, lo que pasa después y lo que dice la gente) está en **`content/historia-ciudad.ts`**.
 
 ## Cómo jugarlo
 

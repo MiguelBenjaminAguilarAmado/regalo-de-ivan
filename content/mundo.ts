@@ -1,6 +1,6 @@
 /**
  * ============================================================
- *  EL HOYO CITY — datos del mundo abierto
+ *  HOYO — datos del mundo abierto
  * ============================================================
  * Distritos, puntos de interés, tienda, civiles, pegatinas y grafitis.
  * Los NPC (luchadores) y sus conversaciones están en content/mundo-npc.ts y las misiones en content/misiones.ts.
@@ -67,6 +67,7 @@ export const POIS: PoiDef[] = [
   { id: 'tablon', district: 'plaza', at: [-9, -11], kind: 'board', name: 'Tablón de misiones', prompt: 'Leer el tablón', solid: { w: 4, d: 1, h: 3, color: 0x6a4a2a } },
   { id: 'fuente', district: 'plaza', at: [0, 0], kind: 'fountain', name: 'Fuente del Hoyo', prompt: 'Mirar la fuente', radius: 3.6 },
   { id: 'story_fichaje', district: 'plaza', at: [0, -11], kind: 'story', name: 'Pablo Motos te espera', prompt: 'Empezar capítulo', chapter: 'fichaje' },
+  { id: 'ring_calle', district: 'plaza', at: [-10, 9.5], kind: 'landmark', name: 'Ring callejero', prompt: 'Mirar el combate de exhibición', solid: { w: 6, d: 6, h: 1.1, color: 0x2a2a30, side: 'n' } },
   { id: 'story_champion', district: 'plaza', at: [8, -13], kind: 'story', name: 'Cartel del Hoyo Champion', prompt: 'Empezar capítulo', chapter: 'champion' },
   // ------------------------------------------------------------------ viviendas
   { id: 'garito', district: 'viviendas', at: [-6, 5], kind: 'garito', name: 'El Garito de las 3000', prompt: 'Bajar al garito (apuestas)', solid: { w: 9, d: 6, h: 5, color: 0x2a2020, sign: 'GARITO' }, cond: { night: true } },
@@ -188,7 +189,7 @@ const civ = (id: string, name: string, blurb: string, a: Partial<CivilDef['appea
 export const CIVILS: CivilDef[] = [
   civ('coach', 'Míster Puñetazo', 'El entrenador del gimnasio. Calvo, ancho y siempre con un silbato.', { skin: 0xb97d56, hair: null, outfitColor: 0xc1272d, build: 1.15 }),
   civ('merchero', 'El Merchero', 'Vende todo lo que lleva la marca del Hoyo. Todo.', { hat: { kind: 'gorra', color: 0xc1272d }, outfitColor: 0xe8b42a, skin: 0xc79a78 }),
-  civ('taxista', 'El Taxista', 'Conoce cada calle del Hoyo City y todos los chismes.', { hat: { kind: 'gorra', color: 0xe8c42a }, outfitColor: 0xf2f2f2, skin: 0xb98062, beard: 0x2a2a2a }),
+  civ('taxista', 'El Taxista', 'Conoce cada calle de Hoyo y todos los chismes.', { hat: { kind: 'gorra', color: 0xe8c42a }, outfitColor: 0xf2f2f2, skin: 0xb98062, beard: 0x2a2a2a }),
   civ('pescador', 'El Pescador', 'Lleva treinta años en el muelle y diez pescados.', { hat: { kind: 'sombrero', color: 0xd8b45a }, outfitColor: 0x2a8a8a, skin: 0xa8734f, beard: 0xdddddd }),
   civ('barman', 'La Barman del Tiki', 'Prepara cócteles con sombrillitas y paga la cuenta de los que se duermen.', { hair: 0x14100c, hairStyle: 'larga', outfitColor: 0x1a1a22, accent: 0xff6a8a, skin: 0xc08a68 }),
   civ('tamborilero', 'El Tamborilero', 'Toca los tambores desde antes de que existiera el Hoyo.', { skin: 0x5a3622, hair: null, outfit: 'desnudo', trunksColor: 0x8a5a24, accent: 0xd8b25a, wraps: 0x8a5a24, build: 1.05 }),

@@ -240,12 +240,12 @@ export class Screens {
       el('div', { class: 'menu-left' }, [
         this.logo(true),
         el('nav', { class: 'menu-list' }, [
+          this.btn('HISTORIA · HOYO', () => this.game.enterWorld(), 'primary story-main', g.save.story?.done.length ? `La ciudad y la Temporada 5 · ${g.save.story.done.length}/${CHAPTERS.length} capítulos` : 'Vive la Temporada 5 en la ciudad de Hoyo'),
           this.btn('VERSUS', () => this.showVersusSetup(), 'primary', 'Un combate contra la CPU'),
           this.btn('TORNEO', () => this.showTournamentSetup(), 'primary', 'Cuadro de eliminatorias'),
           this.btn('ESPECTADOR', () => this.showSpectateSetup(), '', 'CPU contra CPU, con narrador'),
           el('div', { class: 'menu-grid' }, [
-            this.btn('MUNDO ABIERTO', () => this.game.enterWorld(), 'compact', 'Explora el Hoyo City'),
-            this.btn('HISTORIA', () => this.showStoryMenu(), 'compact', g.save.story?.done.length ? `${g.save.story.done.length}/${CHAPTERS.length} capítulos` : 'Temporada 5'),
+            this.btn('CAPÍTULOS', () => this.showStoryMenu(), 'compact', 'Repite capítulos y finales'),
             this.btn('SUPERVIVENCIA', () => this.showSurvivalSetup(), 'compact', g.save.survivalBest ? `Récord: ${g.save.survivalBest}` : 'Racha sin fin'),
             this.btn('ENTRENAMIENTO', () => this.showVersusSetup(undefined, false, true), 'compact', 'Practica sin presión'),
             this.btn('PLANTILLA', () => this.showRoster(), 'compact'),
@@ -797,9 +797,14 @@ export class Screens {
       const label = st === 'done' ? '✔ Completado' : st === 'open' ? '▶ Disponible' : '🔒 Bloqueado';
       return el('button', {
         class: 'mapcard chapter ' + st + (next?.id === ch.id ? ' sel' : ''), 'data-nav': true, disabled: st === 'locked',
-        onClick: () => { if (st === 'locked') { Audio.sfx('foul'); return; } this.click('confirm'); g.startChapter(ch.id); },
+        onClick: () => {
+          if (st === 'locked') { Audio.sfx('foul'); return; }
+          this.click('confirm');
+          // el capítulo pendiente se juega en la calle (vas a su marca); los ya jugados se pueden repetir
+          if (st === 'open') g.enterWorld({ chapter: ch.id }); else g.startChapter(ch.id);
+        },
       }, [
-        el('div', { class: 'tagline' }, `CAPÍTULO ${i + 1} · ${label}`),
+        el('div', { class: 'tagline' }, `CAPÍTULO ${i + 1} · ${st === 'done' ? '✔ Repetir' : label}`),
         el('div', { class: 'mapname' }, ch.title),
         el('div', { class: 'mapdesc' }, st === 'locked' ? '???' : ch.summary),
       ]);
@@ -810,14 +815,13 @@ export class Screens {
       g.save.story = newProgress(p.endings); writeSave(g.save); this.showStoryMenu();
     }, 'small');
     const n = el('div', { class: 'screen storymenu' }, [
-      el('div', { class: 'topbar' }, [this.btn('‹ Atrás', () => this.showMenu(), 'small'), el('h2', {}, 'HISTORIA'), el('span', { class: 'subnote' }, STORY_TITLE)]),
+      el('div', { class: 'topbar' }, [this.btn('‹ Atrás', () => this.showMenu(), 'small'), el('h2', {}, 'CAPÍTULOS'), el('span', { class: 'subnote' }, STORY_TITLE + ' · se vive en Hoyo')]),
       el('div', { class: 'storyintro' }, STORY_INTRO),
       el('div', { class: 'mapgrid' }, list.map((c, i) => card(c, i))),
       el('div', { class: 'options end' }, [
         p.done.length ? resetBtn : null,
         p.endings.length ? this.btn(`Finales vistos (${p.endings.length}/${ENDINGS.length})`, () => this.showStoryEndings(), 'small') : null,
-        this.btn('Explorar el Hoyo City', () => g.enterWorld(), 'small'),
-        next ? this.btn(p.done.length ? 'CONTINUAR' : 'EMPEZAR LA HISTORIA', () => g.startChapter(next.id), 'primary go') : this.btn('Historia completada', () => this.showMenu(), 'primary go'),
+        this.btn(p.done.length || next?.id !== CHAPTERS[0].id ? 'VOLVER A HOYO' : 'EMPEZAR EN HOYO', () => g.enterWorld(), 'primary go'),
       ]),
     ]);
     this.set(n, () => this.showMenu());
@@ -838,7 +842,7 @@ export class Screens {
   }
 
   /** Reproduce escenas de novela visual (con elecciones que activan banderas) y llama a `done` al terminar. */
-  showStoryScenes(scenes: StoryScene[], flags: () => Flags, onChoice: (c: StoryChoice) => void, done: () => void) {
+  showStoryScenes(scenes: StoryScene[], flags: () => Flags, onChoice: (c: StoryChoice) => void, done: () => void, onLine?: (who: string) => void) {
     const g = this.game;
     let si = -1;
     const nextScene = () => {
@@ -858,8 +862,9 @@ export class Screens {
     const box = el('div', { class: 'dbox' }, [port, el('div', { class: 'dmain' }, [nameBox, textBox, hint, choiceBox])]);
     const n = el('div', { class: 'screen dialogue storyscene' }, [el('button', { class: 'btn small skip', 'data-nav': true, onClick: () => skipScene() }, 'Saltar escena »'), box]);
     let cast: string[] = [];
-    const fighter = (id: string) => g.roster.find((r) => r.id === id) ?? null;
+    const fighter = (id: string) => g.roster.find((r) => r.id === id) ?? g.world.civilData(id);
     const show = (l: StoryLine) => {
+      onLine?.(l.who);
       const f = fighter(l.who);
       const narr = l.who === 'narrador';
       nameBox.textContent = narr ? '' : f?.name ?? (l.who === 'arbitro' ? 'Árbitro' : l.who);
@@ -993,8 +998,8 @@ export class Screens {
         sec('Trucos de combate', [['Contraataque', 'guardia justo antes de que llegue el golpe'], ['Revertir agarre', 'pulsa AGARRE justo antes de que te agarren'], ['Combos', '3 golpes seguidos activan el contador; a los 5 ganas momentum extra'], ['Adrenalina', 'la primera vez que bajas del 20 % de vida, 10 s de más pegada y velocidad'], ['Rope break', 'un pin pegado a las cuerdas se rompe solo (donde hay cuerdas que valgan)']]),
         sec('Por parejas', [['Relevo', 'cambia de compañero con R; el que descansa recupera vida y resistencia'], ['Dúos dinámicos', 'algunas parejas se llevan bien y combaten mejor juntas: Kongui y Darksinfacha, Petisui y Big Mac, Perro Cheetos y Petisui, y Pablo Motos con Ansol, Petisui o Elso'], ['Cae uno', 'entra el otro; si caen los dos, perdéis']]),
         sec('Mapas con reglas propias', [['Tribu de Kongui', 'sin ring; si empujas o golpeas hacia el público, te atacan todos'], ['Garito de las 3000', 'el árbitro no ve nada, sin cuenta fuera'], ['Jaula de Acero', 'no hay salida; los golpes fuertes contra la reja hacen daño extra'], ['Azotea de las 3000', 'ráfagas de viento que os empujan'], ['Playa de Honduras', 'la arena te frena un 10 %'], ['Oficina de Pablo Motos', 'Pablo lanza un maletín al que va perdiendo'], ['Ascensor 24/7', 'cabina de cristal sin ring; los pins se cuentan rapidísimo'], ['Estadio de Santiago', 'apagones: todo va más lento y el momentum sube más rápido']]),
-        sec('Mundo abierto (El Hoyo City)', [['Explorar', 'WASD mover · Shift correr · arrastra con el ratón (o , y .) para girar la cámara · rueda = zoom'], ['E / Enter', 'hablar, comprar, entrenar, retar a un combate callejero, jugar un minijuego o empezar un capítulo de historia'], ['M · I · Q · Esc', 'mapa · inventario y equipo · misiones · pausa'], ['Progreso', 'ganas Hoyos y experiencia; el gimnasio y el equipo mejoran a Chema en TODOS los modos (tope +30 %)'], ['Qué hacer', '24 misiones, 30 pegatinas, 10 grafitis, 14 cartas de luchador, 4 minijuegos (pulso, comilona, pesca, tambores), apuestas de noche en el garito y la Torre Motos tras el final']]),
-        sec('Modos', [['Mundo abierto', 'el Hoyo City, enlazado con la Historia'], ['Historia', 'nueve capítulos con decisiones, combates especiales (parejas, jaula, supervivencia, Gauntlet, jefes) y tres finales'], ['Versus', 'un combate (1 contra 1 o 2 contra 2) con dificultad y modificadores'], ['Torneo', 'Hoyo Champion, Hoyo Tag Champion (parejas) y Hoyo Femboy Champion'], ['Supervivencia', 'rivales sin fin, con mejoras tras cada victoria'], ['Entrenamiento', 'practica contra un rival que no puede ganarte'], ['Espectador', 'dos CPUs luchan, con narrador']]),
+        sec('Historia · Hoyo (la ciudad)', [['Explorar', 'WASD o joystick para moverte · Shift o joystick a tope para correr · arrastra (o , y .) para girar la cámara'], ['La historia', 'sigue la flecha y la columna de luz dorada: cada capítulo empieza con una escena en la calle, sales a combatir y vuelves a Hoyo para ver qué pasa después'], ['E / Enter / HABLAR', 'hablar, comprar, entrenar, retar a un combate callejero, jugar un minijuego o empezar un capítulo de historia'], ['M · Q · I · Esc', 'mapa · misiones · bolsa (equipo) · pausa (también con los botones de arriba a la derecha)'], ['Progreso', 'ganas Hoyos y experiencia; el gimnasio y el equipo mejoran a Chema en TODOS los modos (tope +30 %)'], ['Qué hacer', '24 misiones, 30 pegatinas, 10 grafitis, 14 cartas de luchador, 4 minijuegos (pulso, comilona, pesca, tambores), apuestas de noche en el garito y la Torre Motos tras el final']]),
+        sec('Modos', [['Historia · Hoyo', 'la ciudad de Hoyo y la Temporada 5 en un solo modo: nueve capítulos con decisiones, combates especiales (parejas, jaula, supervivencia, Gauntlet, jefes) y tres finales, más misiones, minijuegos y combates callejeros'], ['Capítulos', 'repite capítulos ya jugados y mira los finales'], ['Versus', 'un combate (1 contra 1 o 2 contra 2) con dificultad y modificadores'], ['Torneo', 'Hoyo Champion, Hoyo Tag Champion (parejas) y Hoyo Femboy Champion'], ['Supervivencia', 'rivales sin fin, con mejoras tras cada victoria'], ['Entrenamiento', 'practica contra un rival que no puede ganarte'], ['Espectador', 'dos CPUs luchan, con narrador']]),
         sec('Trajes', [['Elige el traje', 'en la fila TRAJE al seleccionar a un luchador que tenga trajes alternativos (Pablo Motos, Petisui, Darksinfacha…)']]),
       ]),
     ]);
@@ -1019,7 +1024,7 @@ export class Screens {
         tile(String(s.wins), 'Victorias'), tile(String(s.losses), 'Derrotas'), tile(pct + ' %', 'Porcentaje de victorias'),
         tile(String(s.survivalBest ?? 0), 'Mejor racha de Supervivencia'), tile(String(s.taunts), 'Burlas'), tile(`${Object.keys(s.achievements).length}/${ACHIEVEMENTS.length}`, 'Logros'),
         tile(`${s.story?.done.length ?? 0}/${CHAPTERS.length}`, 'Capítulos de la Historia'), tile(`${s.story?.endings.length ?? 0}/${ENDINGS.length}`, 'Finales de la Historia'),
-        s.world ? tile(`Nivel ${s.world.level}`, 'Mundo abierto') : null, s.world ? tile(`${Object.values(s.world.quests).filter((q) => q.done).length}`, 'Misiones del mundo') : null, s.world ? tile(`${s.world.collected.length}/30`, 'Pegatinas') : null,
+        s.world ? tile(`Nivel ${s.world.level}`, 'Hoyo') : null, s.world ? tile(`${Object.values(s.world.quests).filter((q) => q.done).length}`, 'Misiones de Hoyo') : null, s.world ? tile(`${s.world.collected.length}/30`, 'Pegatinas') : null,
       ]),
       el('div', { class: 'hcols' }, [
         el('div', { class: 'hpanel' }, [

@@ -32,7 +32,7 @@ export interface SaveData {
   survivalBest?: number;
   /** Progreso del modo Historia */
   story?: StoryProgress;
-  /** Progreso del mundo abierto (El Hoyo City) */
+  /** Progreso del mundo abierto (la ciudad de Hoyo) */
   world?: WorldProgress;
 }
 

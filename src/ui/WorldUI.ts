@@ -12,7 +12,10 @@ export interface MapData {
   districts: { id: string; name: string; cx: number; cz: number; w: number; d: number; open: boolean; color: string }[];
   player: { x: number; z: number; yaw: number };
   markers: MapMarker[];
+  roads?: { x1: number; z1: number; x2: number; z2: number }[];
 }
+
+export interface Objective { title: string; text: string; angle: number | null; dist: number }
 
 /** HUD y ventanas del mundo abierto (DOM). La lógica vive en WorldController. */
 export class WorldUI {
@@ -27,20 +30,62 @@ export class WorldUI {
   private mini = document.createElement('canvas');
   private miniWrap = el('div', { class: 'wmini-map' });
   private lastMini = 0;
+  private objective = el('div', { class: 'wobj hidden' });
+  private card = el('div', { class: 'wcard' });
+  private btnBar = el('div', { class: 'wbtns' });
+  private actBtn = el('button', { class: 'wact' }, [el('b', {}, 'HABLAR'), el('small', {}, 'usar')]);
+  /** Botones del HUD (mapa, misiones, bolsa, pausa y acción en móvil) */
+  handlers: { map?: () => void; quests?: () => void; bag?: () => void; pause?: () => void; act?: () => void } = {};
   modalOpen = false;
   private onModalClose: (() => void) | null = null;
 
   constructor(parent: HTMLElement) {
     this.mini.width = 168; this.mini.height = 168;
     this.miniWrap.appendChild(this.mini);
-    this.root = el('div', { class: 'world-ui hidden' }, [this.hudTop, this.clock, this.quest, this.miniWrap, this.promptEl, this.toasts, this.banner, this.modalHost]);
+    const hb = (icon: string, label: string, fn: () => (() => void) | undefined) => {
+      const b = el('button', { class: 'wbtn', 'aria-label': label }, [el('span', {}, icon), el('small', {}, label)]);
+      b.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); fn()?.(); });
+      return b;
+    };
+    this.btnBar.append(hb('🗺', 'MAPA', () => this.handlers.map), hb('★', 'MISIONES', () => this.handlers.quests), hb('🎒', 'BOLSA', () => this.handlers.bag), hb('❚❚', 'PAUSA', () => this.handlers.pause));
+    this.actBtn.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.handlers.act?.(); });
+    this.miniWrap.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); this.handlers.map?.(); });
+    this.root = el('div', { class: 'world-ui hidden' }, [this.hudTop, this.clock, this.objective, this.quest, this.miniWrap, this.btnBar, this.actBtn, this.promptEl, this.toasts, this.banner, this.card, this.modalHost]);
     parent.appendChild(this.root);
   }
 
   show() { this.root.classList.remove('hidden'); }
   hide() { this.root.classList.add('hidden'); this.closeModal(); clear(this.toasts); }
 
+  /** Modo cine (escenas en la calle): se esconde el HUD */
+  setCinema(on: boolean) { this.root.classList.toggle('cine', on); }
+
+  /** Objetivo de la historia con flecha hacia la estrella dorada */
+  setObjective(o: Objective | null) {
+    if (!o) { this.objective.classList.add('hidden'); return; }
+    this.objective.classList.remove('hidden');
+    const key = o.title + '|' + o.text;
+    if (this.objective.dataset.k !== key) {
+      this.objective.dataset.k = key; clear(this.objective);
+      this.objective.append(el('i', { class: 'warrow' }, '➤'), el('div', {}, [el('b', {}, o.title), el('span', {}, o.text)]), el('em', { class: 'wdist' }, ''));
+    }
+    const arrow = this.objective.querySelector<HTMLElement>('.warrow')!, dist = this.objective.querySelector<HTMLElement>('.wdist')!;
+    arrow.style.display = o.angle == null ? 'none' : '';
+    if (o.angle != null) arrow.style.transform = `rotate(${(o.angle - Math.PI / 2).toFixed(3)}rad)`;
+    dist.textContent = o.angle == null ? '' : o.dist < 4 ? '¡AQUÍ!' : `${Math.round(o.dist)} m`;
+  }
+
+  /** Cartel grande en el centro (capítulo nuevo, capítulo completado) */
+  chapterCard(kicker: string, title: string, sub: string) {
+    clear(this.card);
+    this.card.className = 'wcard';
+    this.card.append(el('small', {}, kicker), el('h2', {}, title), el('p', {}, sub));
+    void this.card.offsetWidth;
+    this.card.className = 'wcard show';
+  }
+
   setPrompt(text: string | null) {
+    this.actBtn.classList.toggle('can', !!text);
     if (!text) { this.promptEl.classList.add('hidden'); return; }
     if (this.promptEl.dataset.t !== text) { this.promptEl.dataset.t = text; clear(this.promptEl); this.promptEl.appendChild(el('b', {}, 'E')); this.promptEl.appendChild(document.createTextNode(' ' + text)); }
     this.promptEl.classList.remove('hidden');
@@ -95,11 +140,18 @@ export class WorldUI {
       g.globalAlpha = 1; g.strokeStyle = d.open ? '#fff3' : '#c1272d88'; g.lineWidth = 1; g.strokeRect(X(d.cx - d.w / 2), Z(d.cz - d.d / 2), d.w * sc, d.d * sc);
       if (full) { g.fillStyle = '#fff'; g.font = '700 12px sans-serif'; g.textAlign = 'center'; g.fillText(d.open ? d.name : '🔒 ' + d.name, X(d.cx), Z(d.cz - d.d / 2) + 14); }
     }
+    if (m.roads) {
+      g.strokeStyle = 'rgba(40,40,46,0.95)'; g.lineWidth = Math.max(2, 7 * sc); g.lineCap = 'round';
+      for (const r of m.roads) { g.beginPath(); g.moveTo(X(r.x1), Z(r.z1)); g.lineTo(X(r.x2), Z(r.z2)); g.stroke(); }
+      g.fillStyle = '#b9ab92'; g.beginPath(); g.arc(X(0), Z(0), 22 * sc, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#4f8a3a'; g.beginPath(); g.arc(X(0), Z(0), 13 * sc, 0, Math.PI * 2); g.fill();
+    }
     for (const k of m.markers) {
       const x = X(k.x), z = Z(k.z);
       g.fillStyle = k.kind === 'story' ? '#ffd45e' : k.kind === 'quest' ? '#6ad8ff' : k.kind === 'npc' ? '#ff8a6a' : '#cfcfcf';
       g.beginPath(); g.arc(x, z, k.kind === 'story' ? 4.5 : k.kind === 'poi' ? 2.2 : 3, 0, Math.PI * 2); g.fill();
-      if (full && k.label && (k.kind === 'story' || k.kind === 'quest')) { g.fillStyle = '#fff'; g.font = '600 11px sans-serif'; g.textAlign = 'left'; g.fillText(k.label, x + 6, z + 3); }
+      if (k.kind === 'story') { g.strokeStyle = '#000'; g.lineWidth = 1.5; g.stroke(); }
+      if (full && k.label && (k.kind === 'story' || k.kind === 'quest' || k.kind === 'npc')) { g.fillStyle = '#fff'; g.font = '600 11px sans-serif'; g.textAlign = 'left'; g.fillText(k.label, x + 6, z + 3); }
     }
     // jugador
     g.translate(X(m.player.x), Z(m.player.z)); g.rotate(-m.player.yaw + Math.PI);

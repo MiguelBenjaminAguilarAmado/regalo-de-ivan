@@ -2,7 +2,7 @@ import type { FighterStats } from '../combat/types';
 import type { Flags, FlagValue, StoryProgress, StoryScene } from './Story';
 import { holds } from './Story';
 
-/** ===== Mundo abierto "El Hoyo City": lógica PURA (progreso, economía, misiones, horarios, apuestas) ===== */
+/** ===== Mundo abierto "la ciudad de Hoyo": lógica PURA (progreso, economía, misiones, horarios, apuestas) ===== */
 
 export const DAY_MIN = 1440;
 export const START_TIME = 8 * 60; // la partida empieza a las 8:00 del día 1

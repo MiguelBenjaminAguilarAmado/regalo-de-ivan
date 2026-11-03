@@ -246,7 +246,7 @@ export const QUESTS: QuestDef[] = [
     id: 'leyenda', title: 'Leyenda de la ciudad', giver: P, requires: { flag: 'quests15' }, post: true,
     summary: 'Has hecho tantas misiones que Pablo te quiere dar un título.',
     intro: [S([P, 'chema'], [P, 'Quince misiones. Quince. Ni yo las haría. Te nombro Leyenda de la ciudad: un título con un mural y todo.'])],
-    steps: [{ on: 'talk', target: P, text: 'Reclama tu título de Leyenda.', scenes: [S([P, 'chema'], [P, 'Leyenda de El Hoyo City. Te pondré en un mural. Con tu cara. Y mi nombre debajo, más grande.'])] }],
+    steps: [{ on: 'talk', target: P, text: 'Reclama tu título de Leyenda.', scenes: [S([P, 'chema'], [P, 'Leyenda de Hoyo. Te pondré en un mural. Con tu cara. Y mi nombre debajo, más grande.'])] }],
     reward: { money: 2000, xp: 900, points: 3, flags: { leyenda: true }, text: '¡Eres una Leyenda de la ciudad!' },
   },
 ];
