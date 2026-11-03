@@ -23,9 +23,10 @@ export interface DistrictDef {
   /**
    * Trazado de calles del distrito (desplazamientos desde el centro): calles verticales `xs`, horizontales `zs`,
    * ancho de calzada `w`; `alleys` = callejuelas que parten las manzanas; `boulevard` = gran bulevar (z);
-   * `north` = las calles verticales solo llegan hasta ese z (la playa: al sur del paseo no hay edificios).
+   * `north` = las calles verticales solo llegan hasta ese z (la playa: al sur del paseo no hay edificios);
+   * `segmented` = callejuelas cortadas aquí y allá por casas (laberinto de la aldea, siempre con salida).
    */
-  streets: { xs: number[]; zs: number[]; w: number; alleys?: boolean; boulevard?: number; north?: number };
+  streets: { xs: number[]; zs: number[]; w: number; alleys?: boolean; boulevard?: number; north?: number; segmented?: boolean };
   arena: ArenaId;
   music: MusicId;
   unlock?: UnlockRule;

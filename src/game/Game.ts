@@ -19,6 +19,7 @@ import type { MutatorId } from '../combat/mutators';
 import { duoOf } from '../content/duos';
 import { CHAPTERS, ENDINGS } from '../../content/historia';
 import { WorldController } from '../world/WorldController';
+import { DevPanel } from '../ui/DevPanel';
 import { ITEMS } from '../../content/mundo';
 import { applyBonus, bonusOf } from '../modes/World';
 import { setChemaHook } from '../content/roster';
@@ -68,6 +69,7 @@ export class Game {
   story: StoryRun | null = null;
   /** Mundo abierto (la ciudad de Hoyo) */
   world: WorldController;
+  dev!: DevPanel;
   /** Si el capítulo en curso se empezó desde el mundo abierto, al acabar se vuelve a él */
   storyReturn: 'mundo' | null = null;
   surv: SurvivalRun | null = null;
@@ -83,6 +85,7 @@ export class Game {
     this.touch = new TouchControls(ui, this.input);
     this.screens = new Screens(ui, this);
     this.world = new WorldController(this, ui);
+    this.dev = new DevPanel(this, ui);
     // el gimnasio y el equipo del mundo abierto mejoran a Chema en todos los modos
     setChemaHook((f) => (this.save.world ? { ...f, fullStats: applyBonus(f.fullStats, bonusOf(this.save.world, ITEMS)) } : f));
     this.padNav = new PadNav((a) => this.onPad(a));
@@ -607,6 +610,7 @@ export class Game {
     this.padNav.update(dt, this.screens.isOpen() || spectating || this.world.active);
     setPadMode(this.input.lastDevice === 'mando');
     this.stage.render();
+    this.dev.update(dt);
     this.watchPerf(dt);
     requestAnimationFrame(this.frame);
   };

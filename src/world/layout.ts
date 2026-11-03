@@ -45,6 +45,10 @@ export interface Layout {
   districtAt(x: number, z: number): string | null;
   /** ¿Está este punto sobre la calzada de una calle (no acera)? */
   onRoad(x: number, z: number, r?: number): boolean;
+  /** Obstáculos de decoración añadidos después (autobús, contenedores…) */
+  addObstacle(o: { box?: Box; circle?: Circle }): void;
+  /** ¿Hay algún punto importante (tienda, NPC, pegatina…) cerca? */
+  nearSpot(x: number, z: number, r: number): boolean;
 }
 
 function rngOf(seed: string) {
@@ -91,6 +95,7 @@ export function buildLayout(inp: LayoutInput): Layout {
   const W = inp.worldSize;
 
   // ------------------------------------------------------------------ 1) calles
+  const segmentedLanes: DistrictDef[] = [];
   for (const [x1, z1, x2, z2, w] of inp.avenues ?? []) roads.push({ x1, z1, x2, z2, w, kind: 'avenue', district: null });
   const clampZ = (z: number) => Math.max(-W, Math.min(inp.seaZ - 2, z));
   const clampX = (x: number) => Math.max(-W, Math.min(W, x));
@@ -99,6 +104,7 @@ export function buildLayout(inp: LayoutInput): Layout {
     const [cx, cz] = d.center, hw = d.size[0] / 2, hd = d.size[1] / 2;
     const x0 = cx - hw, x1 = cx + hw, z0 = cz - hd, z1 = cz + hd;
     // las calles salen hasta el eje de la avenida (8 m fuera del distrito) para conectar con ella
+    if (st.segmented) { segmentedLanes.push(d); continue; }
     for (const xo of st.xs) {
       const zEnd = st.north != null ? cz + st.north : clampZ(z1 + 8);
       roads.push({ x1: cx + xo, z1: clampZ(z0 - 8), x2: cx + xo, z2: zEnd, w: st.w, kind: 'street', district: d.id });
@@ -159,6 +165,50 @@ export function buildLayout(inp: LayoutInput): Layout {
   for (const s of [...inp.stickers, ...inp.graffiti]) { const [x, z] = world(s.district, s.at); reserved.push({ x, z, r: 2 }); }
   for (const n of inp.npcs) { const [x, z] = world(n.district, n.at); reserved.push({ x, z, r: 2.4 }); }
 
+  // ------------------------------------------------------------------ 2b) callejuelas cortadas (la aldea): tramos entre cruces;
+  // se quitan algunos (y se ponen casas en su lugar) sin dejar nunca una zona sin salida
+  for (const d of segmentedLanes) {
+    const R = rngOf('seg:' + d.id);
+    const st = d.streets;
+    const [cx, cz] = d.center, hw = d.size[0] / 2, hd = d.size[1] / 2;
+    const bx = [cx - hw - 8, ...st.xs.map((x) => cx + x), cx + hw + 8], bz = [cz - hd - 8, ...st.zs.map((z) => cz + z), cz + hd + 8];
+    const nX = bx.length, nZ = bz.length;
+    const id = (i: number, j: number) => (i === 0 || j === 0 || i === nX - 1 || j === nZ - 1) ? -1 : i * nZ + j;
+    type Seg = { a: number; b: number; x1: number; z1: number; x2: number; z2: number; on: boolean };
+    const segs: Seg[] = [];
+    for (let i = 1; i < nX - 1; i++) for (let j = 0; j < nZ - 1; j++) segs.push({ a: id(i, j), b: id(i, j + 1), x1: bx[i], z1: bz[j], x2: bx[i], z2: bz[j + 1], on: true });
+    for (let j = 1; j < nZ - 1; j++) for (let i = 0; i < nX - 1; i++) segs.push({ a: id(i, j), b: id(i + 1, j), x1: bx[i], z1: bz[j], x2: bx[i + 1], z2: bz[j], on: true });
+    // el parque central une sus cuatro esquinas (es una plaza abierta)
+    const mid = (n: number) => [Math.floor((n - 1) / 2), Math.ceil((n - 1) / 2)];
+    const [pi0, pi1] = mid(nX), [pj0, pj1] = mid(nZ);
+    const parkNodes = new Set([id(pi0, pj0), id(pi0, pj1), id(pi1, pj0), id(pi1, pj1)]);
+    const connected = () => {
+      const adj = new Map<number, number[]>();
+      const link = (a: number, b: number) => { adj.set(a, [...(adj.get(a) ?? []), b]); adj.set(b, [...(adj.get(b) ?? []), a]); };
+      for (const sg of segs) if (sg.on) link(sg.a, sg.b);
+      const pk = [...parkNodes]; for (let k = 1; k < pk.length; k++) link(pk[0], pk[k]);
+      const all = new Set<number>(); for (const sg of segs) { all.add(sg.a); all.add(sg.b); }
+      const seen = new Set([-1]); const q = [-1];
+      while (q.length) for (const n of adj.get(q.pop()!) ?? []) if (!seen.has(n)) { seen.add(n); q.push(n); }
+      return [...all].every((n) => seen.has(n));
+    };
+    const order = segs.map((_, k) => k).sort(() => R() - 0.5);
+    for (const k of order) {
+      const sg = segs[k];
+      if (R() > 0.45) continue;
+      sg.on = false;
+      const vert = sg.x1 === sg.x2;
+      const w = st.w + 2 * SIDEWALK + 0.4;
+      const x0 = vert ? sg.x1 - w / 2 : Math.min(sg.x1, sg.x2) + 3.5, x1 = vert ? sg.x1 + w / 2 : Math.max(sg.x1, sg.x2) - 3.5;
+      const z0 = vert ? Math.min(sg.z1, sg.z2) + 3.5 : sg.z1 - w / 2, z1 = vert ? Math.max(sg.z1, sg.z2) - 3.5 : sg.z1 + w / 2;
+      const inside = x0 > cx - hw && x1 < cx + hw && z0 > cz - hd && z1 < cz + hd;
+      const okPlace = inside && x1 - x0 > 2 && z1 - z0 > 2 && !reserved.some((r) => boxCircle(x0, z0, x1, z1, r.x, r.z, r.r + 1.2)) && !solids.some((s2) => x0 < s2.x1 + 1 && x1 > s2.x0 - 1 && z0 < s2.z1 + 1 && z1 > s2.z0 - 1) && !boxCircle(x0, z0, x1, z1, cx, cz, d.freeRadius);
+      if (!okPlace || !connected()) { sg.on = true; continue; }
+      addBox({ x: (x0 + x1) / 2, z: (z0 + z1) / 2, w: x1 - x0, d: z1 - z0, h: 3 + Math.round(R() * 2), color: d.palette[Math.floor(R() * d.palette.length)], district: d.id });
+    }
+    for (const sg of segs) if (sg.on) roads.push({ x1: sg.x1, z1: clampZ(sg.z1), x2: sg.x2, z2: clampZ(sg.z2), w: st.w, kind: 'street', district: d.id });
+  }
+
   // ------------------------------------------------------------------ 3) manzanas y edificios
   for (const d of inp.districts) {
     const R = rngOf('b:' + d.id);
@@ -179,9 +229,9 @@ export function buildLayout(inp: LayoutInput): Layout {
       const mx = (px0 + px1) / 2, mz = (pz0 + pz1) / 2;
       // la playa: al sur del paseo, arena
       const beach = d.style === 'beach' && st.north != null && pz0 >= cz + st.north;
-      const square = Math.hypot(mx - cx, mz - cz) < d.freeRadius || d.style === 'savanna';
-      pads.push({ x: mx, z: mz, w: px1 - px0, d: pz1 - pz0, kind: beach ? 'beach' : d.style === 'savanna' ? 'park' : square ? 'square' : 'block', district: d.id });
-      if (beach || d.style === 'savanna') continue;
+      const square = Math.hypot(mx - cx, mz - cz) < d.freeRadius;
+      pads.push({ x: mx, z: mz, w: px1 - px0, d: pz1 - pz0, kind: beach ? 'beach' : d.style === 'savanna' && square ? 'park' : square ? 'square' : 'block', district: d.id });
+      if (beach) continue;
       // zona edificable: la manzana menos la acera
       let regions: [number, number, number, number][] = [[px0 + SIDEWALK, pz0 + SIDEWALK, px1 - SIDEWALK, pz1 - SIDEWALK]];
       // callejuelas que parten las manzanas grandes (las 3000)
@@ -288,8 +338,8 @@ export function buildLayout(inp: LayoutInput): Layout {
   }
   for (const d of inp.districts) {
     const R = rngOf('p:' + d.id);
-    const kinds: Circle['kind'][] = d.style === 'beach' ? ['palm', 'palm', 'rock', 'bush'] : d.style === 'savanna' ? ['tree', 'tree', 'bush', 'rock', 'hut', 'hut'] : d.style === 'industrial' ? ['crate', 'crate', 'crate', 'rock'] : d.style === 'plaza' ? ['tree', 'bush', 'tree'] : ['tree', 'bush', 'crate'];
-    const count = d.style === 'savanna' ? 70 : d.style === 'beach' ? 40 : d.style === 'industrial' ? 36 : 22;
+    const kinds: Circle['kind'][] = d.style === 'beach' ? ['palm', 'palm', 'rock', 'bush'] : d.style === 'savanna' ? ['tree', 'tree', 'bush', 'rock', 'hut'] : d.style === 'industrial' ? ['crate', 'crate', 'crate', 'rock'] : d.style === 'plaza' ? ['tree', 'bush', 'tree'] : ['tree', 'bush', 'crate'];
+    const count = d.style === 'savanna' ? 34 : d.style === 'beach' ? 40 : d.style === 'industrial' ? 36 : 22;
     let placed = 0, tries = 0;
     while (placed < count && tries++ < 900) {
       const x = d.center[0] + (R() - 0.5) * (d.size[0] - 4), z = d.center[1] + (R() - 0.5) * (d.size[1] - 4);
@@ -331,7 +381,10 @@ export function buildLayout(inp: LayoutInput): Layout {
     for (const d of inp.districts) if (Math.abs(x - d.center[0]) <= d.size[0] / 2 && Math.abs(z - d.center[1]) <= d.size[1] / 2) return d.id;
     return null;
   };
-  return { boxes, circles, roads, pads, graph: buildGraph(roads), spots, worldSize: W, seaZ: inp.seaZ, blocked, districtAt, onRoad };
+  const addObstacle = (o: { box?: Box; circle?: Circle }) => { if (o.box) addBox(o.box); if (o.circle) addCircle(o.circle); };
+  const spotList = Object.values(spots);
+  const nearSpot = (x: number, z: number, r: number) => spotList.some((p) => Math.hypot(p.x - x, p.z - z) < r) || reserved.some((p) => Math.hypot(p.x - x, p.z - z) < r + p.r);
+  return { boxes, circles, roads, pads, graph: buildGraph(roads), spots, worldSize: W, seaZ: inp.seaZ, blocked, districtAt, onRoad, addObstacle, nearSpot };
 }
 
 /** Cruces entre calles (todas son horizontales o verticales) y tramos entre cruces, para los coches */
@@ -342,7 +395,7 @@ function buildGraph(roads: Road[]): RoadGraph {
     if (i < 0) { i = nodes.length; nodes.push({ x, z }); }
     return i;
   };
-  const usable = roads.map((r, i) => ({ r, i })).filter(({ r }) => r.kind !== 'alley');
+  const usable = roads.map((r, i) => ({ r, i })).filter(({ r }) => r.kind !== 'alley' && r.w >= 5);
   const vert = (r: Road) => Math.abs(r.x1 - r.x2) < 0.01;
   const edges: RoadGraph['edges'] = [];
   for (const { r, i } of usable) {

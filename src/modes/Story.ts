@@ -5,7 +5,7 @@ import type { ArenaId, Difficulty } from '../combat/types';
 export type FlagValue = boolean | number | string;
 export type Flags = Record<string, FlagValue>;
 
-/** Una frase de una escena. `who` es el id de un luchador, o 'narrador' / 'arbitro'. */
+/** Una frase de una escena. `who` es el id de un luchador, o 'narrador' / 'arbitro' / 'cartel' (rótulo grande en pantalla). */
 export interface StoryLine {
   who: string;
   text: string;
@@ -35,6 +35,8 @@ export interface StoryScene {
   choices?: StoryChoice[];
   /** La escena solo sale si se cumple esta bandera */
   if?: string | [string, FlagValue];
+  /** «recuerdo»: escena del pasado (la pantalla se tiñe de sepia y no se ve la ciudad) */
+  mood?: 'recuerdo';
 }
 
 export interface StoryFight {

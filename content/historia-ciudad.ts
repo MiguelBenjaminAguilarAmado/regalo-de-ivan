@@ -24,13 +24,56 @@ const TEL = (lines: StoryLine[]): StoryScene => ({ cast: [C], lines });
 
 export const CITY_NAME = 'Hoyo';
 
+const CARTEL = (text: string): StoryLine => ({ who: 'cartel', text });
+
 export const PROLOGUE: StoryScene[] = [
+  // ---------------------------------------------------------------- hace diez años
+  {
+    cast: [C], mood: 'recuerdo',
+    lines: [
+      CARTEL('HACE DIEZ AÑOS'),
+      N('Un pueblo de Sevilla. Un salón con olor a puchero, un sofá con funda de plástico y un niño de nueve años con la nariz pegada a la tele.'),
+      N('En la pantalla, El Hoyo: treinta mil personas gritando, una orquesta desafinando en una esquina y un luchador levantando un cinturón dorado.'),
+      { who: 'arbitro', text: '¡Y el campeón del Hoyo Femboy Champion es… ELSO!' },
+      { who: 'elso', text: '¡Esto va por todos los cipotes que me ven desde casa!' },
+      { who: C, text: '¡Abuela! ¡Abuela! ¡De mayor voy a pelear en El Hoyo!' },
+      N('La abuela le dio un bocadillo de chorizo, una colleja cariñosa y la frase que lo cambió todo: «Primero los deberes, y luego ya revientas a quien quieras».'),
+      { who: C, text: 'Algún día subiré a lo más alto. Lo más alto de todo. Más alto que la tele.' },
+    ],
+  },
+  // ---------------------------------------------------------------- diez años después
+  {
+    cast: [C], mood: 'recuerdo',
+    lines: [
+      CARTEL('DIEZ AÑOS DESPUÉS'),
+      N('Churrería «Los Churros de Paco». Siete de la mañana. Chema tiene diecinueve años, un chándal rojo y una masa de churros en las manos.'),
+      N('Lleva tres años practicando llaves con los sacos de harina. Los sacos ya no se fían de él.'),
+      { who: C, text: 'Paco, mira: ¡suplex al saco de veinticinco kilos!' },
+      N('El saco salió volando. Atravesó el escaparate. Aterrizó en la furgoneta del alcalde. El alcalde estaba dentro.'),
+      N('Paco le dio a Chema dos cosas: una caja de churros y la carta de despido más corta de la historia de Andalucía: «Fuera».'),
+      { who: C, text: 'Bueno. Es una señal. El destino me está diciendo que me vaya a Hoyo. O que no vuelva a tocar un saco.' },
+    ],
+  },
+  // ---------------------------------------------------------------- el autobús
+  {
+    cast: ['pepe the gay dragon'],
+    lines: [
+      CARTEL('RUMBO A HOYO'),
+      N('Ocho horas de autobús, un asiento roto y una caja de churros fríos. En el asiento de al lado, alguien con una máscara rosa de dragón come pipas con mucho estilo.'),
+      { who: 'pepe the gay dragon', text: '=Ola chicoz, soy yo ¡Pepe! que paza chavalez' },
+      { who: C, text: '¿Eres… un dragón?' },
+      { who: 'pepe the gay dragon', text: 'Soy un dragón, sí. Pero por dentro soy un unicornio. Es complicado. ¿Me das un churro?' },
+      { who: C, text: 'Voy a Hoyo a ser luchador. Al Hoyo de verdad, el de la tele.' },
+      { who: 'pepe the gay dragon', text: 'Yo también soy luchador. El más bonito. Si algún día nos toca pelear, perdóname de antemano: el cuerno no tiene freno.' },
+      N('El autobús frena en la plaza de Hoyo. Pepe baja dando un saltito y se pierde entre la gente, comiéndose el último churro.'),
+    ],
+  },
+  // ---------------------------------------------------------------- llegada
   {
     cast: [C],
     lines: [
-      N('Hoyo. Una ciudad pequeña con un estadio enorme, un garito sin reglas, una playa, una tribu, un teatro con un monigote azul… y luchadores en cada esquina.'),
-      N('Un autobús frena en la plaza. Baja un chaval con un chándal rojo, una mochila y ninguna idea de dónde se ha metido.'),
-      { who: C, text: 'Así que esto es Hoyo. Huele a churros, a linimento y a problemas.' },
+      N('Hoyo. Una ciudad pequeña con un estadio enorme, un garito sin reglas, una playa catracha, una tribu, un teatro con un monigote azul… y luchadores en cada esquina.'),
+      { who: C, text: 'Así que esto es Hoyo. Huele a churros, a linimento y a problemas. Me siento como en casa.' },
     ],
   },
   {
@@ -41,7 +84,9 @@ export const PROLOGUE: StoryScene[] = [
       { who: C, text: 'Me llamo Chema. Vengo a buscar a un tal Pablo Motos.' },
       { who: 'taxista', text: '¿Pablo Motos? Huy. Lleva la empresa del Hoyo. Paga poco, promete mucho y tiene un contrato con la letra más pequeña del mundo.' },
       { who: 'nino', text: '¡Mira! Ahí entrenan Big Boom y Big Justice. Y en el ring de la plaza siempre hay combate de exhibición. ¡Los luchadores van por la calle como si nada!' },
-      { who: 'taxista', text: 'Si te pierdes, mira el mapa: los barrios cerrados se abren cuando te ganas el respeto de la ciudad. Y si necesitas ir lejos, para eso estoy yo.' },
+      { who: 'taxista', text: 'La ciudad entera está abierta: pasea por donde quieras. Eso sí, en algunos sitios no te dejarán entrar hasta que te ganes el respeto. Y si necesitas ir lejos, para eso estoy yo. O la moto que tienes aparcada junto a tu piso, que te la ha dejado tu tío.' },
+      { who: C, text: '¿Tengo un tío en Hoyo?' },
+      { who: 'taxista', text: 'Aquí todo el mundo tiene un tío en Hoyo.' },
     ],
   },
   {
@@ -49,7 +94,7 @@ export const PROLOGUE: StoryScene[] = [
     lines: [
       N('Muévete con el joystick (o WASD; corre a tope o con Shift). Pulsa HABLAR / E junto a alguien o junto a un sitio para interactuar.'),
       N('El MAPA (botón o tecla M) te enseña los barrios, los luchadores y la estrella dorada del siguiente capítulo. Arriba verás siempre tu objetivo y una flecha que te guía.'),
-      N('La historia avanza en las marcas doradas. Entre capítulo y capítulo, Hoyo es tuyo: misiones, pegatinas, combates callejeros, minijuegos, tiendas y apuestas.'),
+      N('La historia avanza en las marcas doradas. Entre capítulo y capítulo, Hoyo es tuyo: misiones, pegatinas, combates callejeros, minijuegos, tiendas, apuestas… y tu moto.'),
     ],
   },
 ];
@@ -95,6 +140,16 @@ export const CITY_BEATS: Record<string, CityBeat> = {
       ],
     }],
     after: [
+      {
+        cast: ['petisui'],
+        lines: [
+          { who: 'petisui', text: 'Oye, novato. ¿Ves esa torre de cristal al norte? La de Pablo Motos.' },
+          { who: C, text: 'Se ve desde toda la ciudad.' },
+          { who: 'petisui', text: 'Algún día llegaremos a lo más alto de esa torre. Tú y yo. Y le cambiaremos la contraseña del wifi a Pablo.' },
+          { who: C, text: '¿Eso es una promesa?' },
+          { who: 'petisui', text: 'Es una amenaza. Pero de las bonitas.' },
+        ],
+      },
       {
         cast: ['abuela'],
         lines: [
@@ -175,10 +230,11 @@ export const CITY_BEATS: Record<string, CityBeat> = {
     }],
     after: [
       {
-        cast: ['mecanico'],
+        cast: ['mecanico', 'betico'],
         lines: [
           { who: 'mecanico', text: 'Te he visto salir de la jaula andando. Respeto. Ni yo sé arreglar lo que Yosuke ha dejado ahí dentro.' },
           { who: 'mecanico', text: 'Un consejo: dicen que esta noche te buscan en la azotea de las 3000. Mucha gente. Pocas ganas de hablar.' },
+        { who: 'betico', text: '¡Chema, quillo! Desde la peña bética te mandamos ánimos. Si sobrevives a la azotea, la primera ronda la paga el Betis. Manque pierda.' },
         ],
       },
     ],
@@ -206,9 +262,10 @@ export const CITY_BEATS: Record<string, CityBeat> = {
     goal: 'Ve al Estadio de Santiago (noroeste): empieza el Gauntlet',
     cast: [P, 'kent'],
     arrive: [{
-      cast: ['hincha', 'kent'],
+      cast: ['hincha', 'canalla', 'kent'],
       lines: [
         { who: 'hincha', text: '¡CHI-CHI-CHI! ¡LE-LE-LE! ¡Llegó el español! ¡Que te vamos a pitar, compadre, pero con cariño!' },
+        { who: 'canalla', text: '¡Pará, pará! Yo soy de Rosario Central, vine desde Argentina solo para verte. ¡Vamos Canalla! Si ganás, te regalo la camiseta. Si perdés, también, que me queda chica.' },
         { who: 'kent', text: 'No les hagas caso. O sí. Aquí el público pega más fuerte que los luchadores.' },
       ],
     }],
@@ -242,9 +299,11 @@ export const CITY_BEATS: Record<string, CityBeat> = {
     goal: 'Sube al ascensor de cristal de la Torre: el último combate',
     cast: ['sergio', 'pepe the gay dragon'],
     arrive: [{
-      cast: ['sergio'],
+      cast: ['sergio', 'petisui'],
       lines: [
         { who: 'sergio', text: '¡Hola! ¿Tú eres Chema? ¡Mi papá dice que eres muy bueno! Yo también. Yo soy invencible. ¿Subimos juntos?' },
+        { who: 'petisui', text: 'Te lo dije, novato. Lo más alto de la Torre de Pablo Motos. Llevo la nueva contraseña del wifi apuntada en la mano.' },
+        { who: C, text: 'Desde el sofá de mi abuela hasta aquí arriba. Diez años, Petisui. Diez años.' },
       ],
     }],
   },
@@ -278,4 +337,11 @@ export const CHATTER: { text: string; cond?: Cond }[] = [
   { text: 'Yosuke va diciendo que te va a quitar el cinturón.', cond: { chapter: 'pareja', notChapter: 'yosuke' } },
   { text: 'He oído que Pablo tiene un arma secreta: un niño con capa.', cond: { chapter: 'gauntlet', notChapter: 'final' } },
   { text: '¡Leyenda de Hoyo! ¡Mi hijo quiere ser como tú!', cond: { ending: true } },
+  { text: '¡Viva er Betis manque pierda!' },
+  { text: 'En la peña bética de las 3000 ponen el fútbol y las peleas a la vez.' },
+  { text: '¡Vamos Canalla! Rosario Central, la pasión de mi vida.' },
+  { text: 'Un argentino de Rosario Central y un chileno discuten en Santiago desde hace tres días.' },
+  { text: 'Ola chicoz… perdona, se me ha pegado lo de Pepe.' },
+  { text: 'Elso dice «maje» cada tres palabras. Ya lo digo yo también, maje.' },
+  { text: 'Dicen que el que llegue a lo más alto de la Torre Motos se queda con el wifi.' },
 ];

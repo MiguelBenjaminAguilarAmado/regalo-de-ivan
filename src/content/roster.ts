@@ -133,10 +133,14 @@ export function withSkin(f: FighterData, skinId?: string | null): FighterData {
 let chemaHook: ((f: FighterData) => FighterData) | null = null;
 /** El mundo abierto mejora a Chema (gimnasio, equipo…): ese bono se aplica aquí para que valga en todos los modos. */
 export const setChemaHook = (h: ((f: FighterData) => FighterData) | null) => { chemaHook = h; };
+/** Modo dev: retoques de estadísticas de cualquier luchador */
+let statsOverride: ((f: FighterData) => FighterData) | null = null;
+export const setStatsOverride = (h: ((f: FighterData) => FighterData) | null) => { statsOverride = h; };
 
 export const fighterById = (id: string, skinId?: string | null): FighterData => {
   const f = ROSTER.find((r) => r.id === id);
   if (!f) throw new Error(`Luchador desconocido: ${id}`);
-  const out = withSkin(f, skinId);
+  let out = withSkin(f, skinId);
+  if (statsOverride) out = statsOverride(out);
   return id === 'chema' && chemaHook ? chemaHook(out) : out;
 };

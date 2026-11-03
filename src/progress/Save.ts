@@ -24,6 +24,8 @@ export interface SaveData {
   winsBy: Record<string, number>;
   taunts: number;
   settings: Settings;
+  /** Modo desarrollador: activado y retoques de estadísticas por luchador */
+  dev?: { on: boolean; stats?: Record<string, Partial<import('../combat/types').FighterStats>> };
   /** Último traje elegido por luchador (id del luchador → id del traje) */
   skins?: Record<string, string>;
   /** Torneos ganados por tipo (champion / tag / femboy) */

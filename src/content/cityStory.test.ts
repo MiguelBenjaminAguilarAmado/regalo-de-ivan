@@ -5,7 +5,7 @@ import { CIVILS, POIS } from '../../content/mundo';
 import { ROSTER } from './roster';
 import type { StoryScene } from '../modes/Story';
 
-const known = new Set(['narrador', 'arbitro', ...ROSTER.map((f) => f.id), ...CIVILS.map((c) => c.id)]);
+const known = new Set(['narrador', 'arbitro', 'cartel', ...ROSTER.map((f) => f.id), ...CIVILS.map((c) => c.id)]);
 const whos = (scenes: StoryScene[]) => scenes.flatMap((s) => [...s.lines.map((l) => l.who), ...(s.cast ?? [])]);
 
 describe('Historia en la ciudad de Hoyo', () => {
@@ -20,4 +20,12 @@ describe('Historia en la ciudad de Hoyo', () => {
     for (const w of all) expect(known.has(w), w).toBe(true);
   });
   it('la gente de la calle tiene frases', () => { expect(CHATTER.length).toBeGreaterThan(15); });
+});
+
+describe('trajes', () => {
+  it('todos los trajes se desbloquean con un logro que existe', async () => {
+    const { ACHIEVEMENTS } = await import('../progress/Achievements');
+    const ids = new Set(ACHIEVEMENTS.map((a) => a.id));
+    for (const f of ROSTER) for (const s of f.skins ?? []) { expect(s.unlock?.achievement, `${f.id}/${s.id}`).toBeTruthy(); expect(ids.has(s.unlock!.achievement), `${f.id}/${s.id}`).toBe(true); }
+  });
 });

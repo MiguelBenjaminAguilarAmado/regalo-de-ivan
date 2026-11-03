@@ -31,38 +31,38 @@ export const DISTRICTS: DistrictDef[] = [
   },
   {
     id: 'viviendas', name: 'Las 3000 Viviendas', blurb: 'Bloques de hormigón, grafitis y un garito donde no hay reglas.',
-    center: [-117.5, 0], size: [105, 98], style: 'blocks', ground: 0x4a4a50, palette: [0x6a6258, 0x58606a, 0x7a6a5a, 0x4e5660, 0x70625c], buildings: 18, height: [14, 40], freeRadius: 15, streets: { xs: [-34, 34], zs: [-30, 30], w: 6, alleys: true },
+    center: [-117.5, 0], size: [105, 98], style: 'blocks', ground: 0x4a4a50, palette: [0xe0d6c4, 0xd8c8a8, 0xc8b8a8, 0xd0c0d8, 0xe8d8b0, 0xb8c8c0], buildings: 18, height: [14, 40], freeRadius: 15, streets: { xs: [-34, 34], zs: [-30, 30], w: 6, alleys: true },
     arena: 'garito', music: 'garito',
   },
   {
     id: 'aldea', name: 'Aldea de Kongui', blurb: 'El Reino Kongui: chozas, tambores y una tribu que lo ve todo.',
-    center: [117.5, -117.5], size: [105, 105], style: 'savanna', ground: 0xa87a44, palette: [0xb98a58, 0xa87a48, 0xc79a62], buildings: 12, height: [3, 5], freeRadius: 60, streets: { xs: [], zs: [], w: 0 },
-    arena: 'tribu', music: 'tribu', unlock: { chapter: 'garito' }, lockText: 'La tribu solo recibe a quien ya ha pisado el garito. (Historia: capítulo 2)',
+    center: [117.5, -117.5], size: [105, 105], style: 'savanna', ground: 0xa87a44, palette: [0xc58a4a, 0xb8763a, 0xd9a462, 0xa86a3a, 0xe0b878], buildings: 12, height: [3, 6], freeRadius: 24, streets: { xs: [-40, -27, 27, 40], zs: [-40, -27, 27, 40], w: 3.5, segmented: true },
+    arena: 'tribu', music: 'tribu', unlock: { chapter: 'garito' }, lockText: 'El parque de combates de la tribu solo abre a quien ya ha pisado el garito. (Historia: capítulo 2)',
   },
   {
     id: 'playa', name: 'Playa de Honduras', blurb: 'Arena, olas, un chiringuito tiki y una hoguera.',
-    center: [60.5, 107.5], size: [219, 85], style: 'beach', ground: 0xd9c690, palette: [0x9a7a3a, 0x7a5a2a], buildings: 5, height: [3, 5], freeRadius: 10, streets: { xs: [-80, -50, -20, 10, 40, 70], zs: [-14], w: 7, north: -14 },
+    center: [60.5, 107.5], size: [219, 85], style: 'beach', ground: 0xd9c690, palette: [0x5ac8c8, 0xf2c14e, 0xff9a8a, 0x8ad87a, 0xf2f2f2, 0x7ab8ff], buildings: 5, height: [4, 9], freeRadius: 10, streets: { xs: [-80, -50, -20, 10, 40, 70], zs: [-14], w: 7, north: -14 },
     arena: 'playa', music: 'playa',
   },
   {
     id: 'manchester', name: 'Barrio Manchester', blurb: 'Teatros, cafés y un monigote azul gigante agitando los brazos.',
-    center: [117.5, 0], size: [105, 98], style: 'theater', ground: 0x5a5a66, palette: [0x8a4a4a, 0x4a5a8a, 0x8a7a4a, 0x6a4a7a, 0x4a7a6a], buildings: 14, height: [10, 26], freeRadius: 22, streets: { xs: [-30, 30], zs: [-32], w: 6, boulevard: 30 },
+    center: [117.5, 0], size: [105, 98], style: 'theater', ground: 0x5a5a66, palette: [0x8a3a2a, 0x9a4a32, 0x7a3428, 0x6a5a66, 0xa8603a], buildings: 14, height: [10, 22], freeRadius: 22, streets: { xs: [-30, 30], zs: [-32], w: 6, boulevard: 30 },
     arena: 'manchester', music: 'manchester', unlock: { chapter: 'champion' }, lockText: 'Aún no te dejan entrar al teatro. (Historia: capítulo 3)',
   },
   {
     id: 'industrial', name: 'Polígono Industrial', blurb: 'Naves, chatarra y la fábrica donde se cierra la jaula.',
     center: [-117.5, 107.5], size: [105, 85], style: 'industrial', ground: 0x3e3e44, palette: [0x6a6a70, 0x5a4a44, 0x4a5a5a, 0x70706a], buildings: 10, height: [8, 16], freeRadius: 22, streets: { xs: [-30, 30], zs: [-30, 24], w: 10 },
-    arena: 'jaula', music: 'jaula', unlock: { chapter: 'pareja' }, lockText: 'El polígono está vallado. (Historia: capítulo 4)',
+    arena: 'jaula', music: 'jaula', unlock: { chapter: 'pareja' }, lockText: 'La puerta de la fábrica está cerrada con cadenas. (Historia: capítulo 4)',
   },
   {
     id: 'torre', name: 'Torre Motos', blurb: 'La sede de Pablo Motos: moqueta, trofeos y un ascensor de cristal.',
-    center: [0, -117.5], size: [98, 105], style: 'tower', ground: 0x2a2e3a, palette: [0x30384a, 0x3a4458, 0x28303e], buildings: 8, height: [20, 44], freeRadius: 24, streets: { xs: [-27, 27], zs: [-30, 30], w: 12 },
-    arena: 'oficina', music: 'oficina', unlock: { chapter: 'gauntlet' }, lockText: 'Seguridad no te deja pasar a la Torre. (Historia: capítulo 7)',
+    center: [0, -117.5], size: [98, 105], style: 'tower', ground: 0x2a2e3a, palette: [0x6a8aaa, 0x5a7a9a, 0x7a9ab8, 0x8aa0b0], buildings: 8, height: [24, 52], freeRadius: 24, streets: { xs: [-27, 27], zs: [-30, 30], w: 12 },
+    arena: 'oficina', music: 'oficina', unlock: { chapter: 'gauntlet' }, lockText: 'Seguridad no te deja pasar al vestíbulo de la Torre. (Historia: capítulo 7)',
   },
   {
     id: 'santiago', name: 'Estadio de Santiago', blurb: 'Una esquina de Chile en mitad de la ciudad: estadio, empanadas y hinchada.',
     center: [-117.5, -117.5], size: [105, 105], style: 'stadium', ground: 0x4a6a44, palette: [0xc1272d, 0xf2f2f2, 0x1c3f8c, 0x8a8a92], buildings: 8, height: [8, 18], freeRadius: 26, streets: { xs: [-34, 34], zs: [-32, 32], w: 9 },
-    arena: 'santiago', music: 'santiago', unlock: { chapter: 'azotea' }, lockText: 'El tren a Santiago aún no pasa por aquí. (Historia: capítulo 6)',
+    arena: 'santiago', music: 'santiago', unlock: { chapter: 'azotea' }, lockText: 'Las puertas del estadio están cerradas hasta el Gauntlet. (Historia: capítulo 6)',
   },
 ];
 
@@ -89,6 +89,7 @@ export const POIS: PoiDef[] = [
   // ------------------------------------------------------------------ aldea
   { id: 'tambores', district: 'aldea', at: [0, 0], kind: 'minigame', minigame: 'tambores', name: 'Círculo de tambores', prompt: 'Tocar los tambores', radius: 2.6 },
   { id: 'choza_jefe', district: 'aldea', at: [-12, -8], kind: 'vendor', name: 'Choza del curandero', prompt: 'Comprar remedios', solid: { w: 7, d: 7, h: 4, color: 0xa87a48 }, sells: ['bocata', 'chuleton', 'bebida'] },
+  { id: 'parque_tribu', district: 'aldea', at: [10, -13], kind: 'landmark', name: 'Parque de combates de la tribu', prompt: 'Pelear en el círculo de la tribu', radius: 1.5 },
   { id: 'taxi_aldea', district: 'aldea', at: [-4, 18], kind: 'taxi', name: 'Camioneta del pueblo', prompt: 'Viajar a otro distrito', solid: { w: 4.4, d: 2.2, h: 1.6, color: 0xe8c42a, side: 's' } },
   // ------------------------------------------------------------------ playa
   { id: 'pesca', district: 'playa', at: [12, 39], kind: 'minigame', minigame: 'pesca', name: 'Muelle de pesca', prompt: 'Pescar', radius: 2.4 },
@@ -210,5 +211,7 @@ export const CIVILS: CivilDef[] = [
   civ('recepcionista', 'La Recepcionista de la Torre', 'Sonríe por contrato. Es de lo poco que Pablo cumple.', { outfit: 'blazer', outfitColor: 0xf2f2f2, trunksColor: 0xf2f2f2, hairStyle: 'larga', hair: 0x2a1810, accent: 0xd8b43a }),
   civ('hincha', 'El Hincha chileno', 'Lleva la camiseta de la Roja y un bombo que no se calla.', { hat: { kind: 'gorra', color: 0x1c3f8c }, outfitColor: 0xc1272d, skin: 0xd2a07a }),
   civ('vendedor', 'El Vendedor de empanadas', 'Sus empanadas curan casi todo. Casi.', { hat: { kind: 'gorra', color: 0xf2f2f2 }, outfitColor: 0xf2f2f2, skin: 0xc79a78, beard: 0x3a2a1a }),
+  civ('betico', 'El Bético de la peña', 'Socio de la peña bética de las 3000. Verde y blanco hasta en el pijama.', { outfitColor: 0x0b8a3a, accent: 0xffffff, hat: { kind: 'gorra', color: 0x0b8a3a }, skin: 0xc79a78, beard: 0x2a1a10 }),
+  civ('canalla', 'El Canalla de Rosario', 'Hincha de Rosario Central venido desde Argentina. Discute con el hincha chileno desde hace tres días.', { outfitColor: 0x00346e, accent: 0xf7c600, trunksColor: 0xf7c600, hair: 0x14100c, skin: 0xd2a07a }),
   civ('guardia', 'El Guardia de seguridad', 'Gafas de sol de noche y cara de pocos amigos.', { outfit: 'traje', outfitColor: 0x101014, trunksColor: 0x101014, glasses: 'sol', hair: null, skin: 0xb98062, build: 1.12 }),
 ];

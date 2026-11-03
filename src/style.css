@@ -459,3 +459,27 @@ body.pad-mode .btn:focus { transform: translateX(10px) skewX(-4deg); border-left
   .menu-list { display: grid; grid-template-columns: repeat(2, max-content); gap: 4px 8px; }
   .menu-list > .menu-grid { grid-column: 1 / -1; }
 }
+
+/* ========== escenas del pasado y rótulos grandes ========== */
+.storyscene.recuerdo { background: radial-gradient(ellipse at center, rgba(70, 48, 24, 0.86), rgba(20, 12, 6, 0.97)); }
+.storyscene.recuerdo::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255, 230, 190, 0.035) 0 2px, transparent 2px 4px); }
+.storyscene.recuerdo .dbox { filter: sepia(0.55); }
+.scard { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: auto; cursor: pointer; }
+.scard i { position: absolute; left: -10%; right: -10%; top: 38%; height: 24%; background: var(--red); transform: skewY(-4deg) scaleX(0); transform-origin: left; animation: scardBar 0.5s cubic-bezier(.7, 0, .3, 1) forwards; box-shadow: 0 0 0 8px #0b0908, 0 0 0 12px var(--ink); }
+.scard b { position: relative; font-family: var(--f-display); font-weight: 400; font-size: clamp(40px, 8vw, 110px); letter-spacing: 0.08em; color: var(--ink); text-shadow: 6px 6px 0 #0b0908; transform: skewY(-4deg); animation: scardText 0.6s 0.2s cubic-bezier(.2, .9, .3, 1.3) both; text-align: center; padding: 0 4vw; }
+@keyframes scardBar { to { transform: skewY(-4deg) scaleX(1); } }
+@keyframes scardText { from { opacity: 0; transform: skewY(-4deg) scale(2.2); } to { opacity: 1; transform: skewY(-4deg) scale(1); } }
+
+/* ========== modo dev ========== */
+.devbtn { position: fixed; left: 50%; bottom: 6px; transform: translateX(-50%); z-index: 95; pointer-events: auto; background: #0b0908; color: #3aff9a; border: 2px solid #3aff9a; font-family: var(--f-display); letter-spacing: 0.15em; padding: 3px 12px; border-radius: 6px; font-size: 13px; opacity: 0.8; }
+.devpanel { position: fixed; top: 0; right: 0; bottom: 0; width: min(440px, 96vw); z-index: 96; pointer-events: auto; background: rgba(8, 10, 8, 0.95); border-left: 3px solid #3aff9a; display: flex; flex-direction: column; font-family: var(--f-ui); color: var(--ink); animation: panelIn 0.3s both; touch-action: pan-y; }
+.devhead { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-bottom: 1px solid #3aff9a44; } .devhead b { font-family: var(--f-display); letter-spacing: 0.2em; color: #3aff9a; font-weight: 400; font-size: 20px; } .devx { font-size: 22px; min-width: 40px; min-height: 40px; }
+.devinfo { padding: 4px 14px; font-size: 12px; color: #9fe8c0; font-family: ui-monospace, monospace; }
+.devtabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 10px; }
+.devbody { flex: 1; overflow-y: auto; padding: 6px 12px 20px; display: grid; gap: 6px; align-content: start; }
+.devrow { display: grid; grid-template-columns: 110px 1fr; gap: 8px; align-items: center; background: rgba(255, 255, 255, 0.04); padding: 6px 8px; border-left: 2px solid #3aff9a55; } .devrow > span { font-size: 13px; color: var(--dim); font-weight: 600; }
+.devctl { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; } .devctl input[type=range] { flex: 1; min-width: 120px; accent-color: #3aff9a; } .devctl em { font-style: normal; font-size: 12px; min-width: 38px; color: #9fe8c0; }
+.devctl select, .devctl input[type=text] { background: #1a1d1a; color: var(--ink); border: 1px solid #3aff9a55; padding: 6px; font: inherit; min-height: 36px; max-width: 100%; }
+.devpanel .chip { min-height: 36px; font-size: 13px; }
+.devjson { width: 100%; min-height: 50vh; background: #050605; color: #b8f0c8; border: 1px solid #3aff9a55; font: 11px/1.3 ui-monospace, monospace; padding: 8px; }
+.devpanel.hidden, .devbtn.hidden { display: none !important; }

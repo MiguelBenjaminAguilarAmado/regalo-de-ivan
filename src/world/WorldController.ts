@@ -72,7 +72,8 @@ export class WorldController {
 
   // ------------------------------------------------------------------ puente con la vista
   private bridge: WorldBridge = {
-    isOpen: (d) => districtOpen(DIST_MAP.get(d)?.unlock, this.ctx()),
+    // toda la ciudad está abierta: lo que se cierra son algunos edificios (ver `lockedPlace`)
+    isOpen: () => true,
     npcSpot: (n) => {
       if (n.alt && condHolds(n.alt.cond, this.ctx())) return { district: n.alt.district, at: n.alt.at };
       if (n.presence && !condHolds(n.presence, this.ctx())) return null;
@@ -244,6 +245,7 @@ export class WorldController {
       // E (teclado) interactúa; con mando se usa A (lo gestiona pad())
       mx = inp.mx; mz = inp.mz; run = inp.run; act = inp.taunt && g.input.lastDevice !== 'mando';
     } else g.input.reset();
+    view.devNoclip = g.dev?.noclip ?? false; view.devSpeed = g.dev?.speed ?? 1;
     // stick derecho: cámara
     const pad = g.input.activePad();
     if (pad && !view.inScene) {
@@ -333,7 +335,7 @@ export class WorldController {
 
   private promptFor(t: Target): string {
     if (t.kind === 'npc') return `Hablar con ${t.label}`;
-    if (t.kind === 'poi') return t.def.prompt;
+    if (t.kind === 'poi') return this.lockedPlace(t.def) ? `🔒 ${t.def.name} (cerrado)` : t.def.prompt;
     if (t.kind === 'graffiti') return `Hacer una foto: ${t.label}`;
     if (t.kind === 'moto') return this.view?.riding ? `Bajar de la moto · ${this.view.speedKmh} km/h` : 'Subir a la moto';
     return '';
@@ -477,7 +479,17 @@ export class WorldController {
   }
 
   // ------------------------------------------------------------------ lugares
+  /** ¿Este sitio está cerrado todavía? (los edificios importantes de cada barrio abren con la historia) */
+  private lockedPlace(p: PoiDef): string | null {
+    const d = DIST_MAP.get(p.district);
+    if (!d?.unlock || districtOpen(d.unlock, this.ctx())) return null;
+    if (!['landmark', 'arena', 'tower', 'minigame', 'garito'].includes(p.kind) || p.id === 'ring_calle' || p.id === 'monigote') return null;
+    return d.lockText ?? 'Está cerrado. Vuelve más adelante en la historia.';
+  }
+
   private usePoi(p: PoiDef) {
+    const locked = this.lockedPlace(p);
+    if (locked) { Audio.sfx('foul'); this.ui.toast(`🔒 ${p.name}: ${locked}`, 'bad'); return; }
     switch (p.kind) {
       case 'shop': case 'vendor': this.shopPanel(p); break;
       case 'gym': this.gymPanel(); break;
@@ -492,7 +504,7 @@ export class WorldController {
       case 'heal': this.restAt(p); break;
       case 'photo': this.photoSpot(p); break;
       case 'fountain': this.fountain(p); break;
-      case 'landmark': if (p.id === 'ring_calle') { this.ringShow(); break; } this.report({ t: 'visit', id: p.id }); this.ui.toast(p.name + ': ' + p.prompt, 'info'); break;
+      case 'landmark': if (p.id === 'ring_calle') { this.ringShow(); break; } if (p.id === 'parque_tribu') { this.tribePark(); break; } this.report({ t: 'visit', id: p.id }); this.ui.toast(p.name + ': ' + p.prompt, 'info'); break;
       default: this.report({ t: 'visit', id: p.id }); this.ui.toast(p.name + ': ' + p.prompt, 'info');
     }
   }
@@ -577,7 +589,18 @@ export class WorldController {
     return { p, startMom: pend.mom };
   }
 
-  private challenge(npc: NpcDef) {
+  /** Parque de combates de la tribu: se pelea en el círculo, con la tribu mirando */
+  private tribePark() {
+    this.report({ t: 'visit', id: 'parque_tribu' });
+    const rivals = ['kongui', 'big mac', 'perro cheetos', 'elso'].map((id) => NPC_MAP.get(id)).filter((n): n is NpcDef => !!n);
+    const rows = rivals.map((n) => {
+      const ready = canChallenge(this.progress, n.id);
+      return this.row(fighterById(n.id).name, ready ? 'En el círculo de la tribu: sin ring y con la tribu alrededor (si les pegas, se meten).' : 'Está descansando.', ready ? 'Pelear' : 'Descansa', () => { this.ui.closeModal(); this.challenge(n, 'tribu'); }, !ready);
+    });
+    this.open('Parque de combates de la tribu', [el('p', {}, 'Aquí la tribu de Kongui celebra sus combates desde antes de que existiera el Hoyo. Elige rival.'), el('div', { class: 'wlist' }, rows)], true);
+  }
+
+  private challenge(npc: NpcDef, arenaOverride?: import('../combat/types').ArenaId) {
     const level = this.level();
     const diff = streetDifficulty(level);
     let c = fighterById(npc.id);
@@ -587,7 +610,7 @@ export class WorldController {
     const first = !this.progress.cards.includes(npc.id);
     this.fight = { npc: npc.id, first };
     // los combates callejeros se pelean en el callejón de Hoyo
-    const arena: import('../combat/types').ArenaId = 'callejon';
+    const arena: import('../combat/types').ArenaId = arenaOverride ?? 'callejon';
     const d = this.view?.district ? DIST_MAP.get(this.view.district) : null;
     const opts: BattleOpts = { p, c, arena, difficulty: diff, startMom, objective: `Gana el combate callejero contra ${c.name}`, label: `COMBATE CALLEJERO · ${(d?.name ?? 'HOYO').toUpperCase()}` };
     this.launch(opts);
@@ -727,7 +750,7 @@ export class WorldController {
   afterChapter(chapterId: string) {
     this.view?.refresh();
     const unlocked = DISTRICTS.filter((d) => d.unlock?.chapter === chapterId);
-    for (const d of unlocked) this.ui.toast(`🔓 Nuevo distrito: ${d.name}`, 'gold');
+    for (const d of unlocked) this.ui.toast(`🔓 Ya puedes entrar en los sitios importantes de ${d.name}`, 'gold');
     this.report({ t: 'chapter', id: chapterId });
     this.checkAchievements();
   }

@@ -9,7 +9,9 @@ import type { Stage } from '../render/Stage';
 import { windowsTexture } from '../arenas/Azotea';
 import { AVENUES, DISTRICTS, GRAFFITI, POIS, SEA_Z, SPAWN, STICKERS, WORLD_SIZE } from '../../content/mundo';
 import { NPCS } from '../../content/mundo-npc';
-import { buildLayout, type Layout } from './layout';
+import { buildLayout, type Box, type Layout } from './layout';
+import { badgeTexture, muralTexture, nearestWall } from './Decor';
+import { buildBarrios, type Barrios } from './Barrios';
 import { box, buildCityStatic, makeMoto, makeTaxi, merge, paint, type CityStatic } from './CityMeshes';
 import type { DistrictDef, NpcDef, PoiDef } from './types';
 
@@ -66,6 +68,24 @@ function textTexture(text: string, bg: string, fg: string, w = 512, h = 128, siz
 }
 
 /** Adoquines de la plaza */
+/** Rótulo de la pantalla y las vallas: EL HOYO WRESTLING + nombre */
+function captionTexture(name: string): THREE.CanvasTexture {
+  const c = document.createElement('canvas'); c.width = 384; c.height = 512;
+  const g = c.getContext('2d')!;
+  const grd = g.createLinearGradient(0, 0, 0, 512); grd.addColorStop(0, '#c1272d'); grd.addColorStop(1, '#5a0e12');
+  g.fillStyle = grd; g.fillRect(0, 0, 384, 512);
+  g.fillStyle = 'rgba(0,0,0,0.25)'; for (let i = 0; i < 12; i++) g.fillRect(0, i * 44, 384, 18);
+  g.textAlign = 'center'; g.fillStyle = '#f2c14e'; g.font = '900 40px Impact, "Arial Black", sans-serif'; g.fillText('EL HOYO', 192, 70);
+  g.fillStyle = '#efe6d5'; g.font = '700 26px "Arial Narrow", sans-serif'; g.fillText('W R E S T L I N G', 192, 104);
+  const words = name.toUpperCase().split(' ');
+  let size = 78; g.font = `900 ${size}px Impact, "Arial Black", sans-serif`;
+  while (Math.max(...words.map((w) => g.measureText(w).width)) > 350 && size > 30) { size -= 4; g.font = `900 ${size}px Impact, "Arial Black", sans-serif`; }
+  g.fillStyle = '#fff'; g.lineWidth = 8; g.strokeStyle = '#111';
+  words.slice(0, 3).forEach((w, i) => { const y = 250 + i * (size + 6) - (words.length - 1) * size * 0.45; g.strokeText(w, 192, y); g.fillText(w, 192, y); });
+  g.fillStyle = '#f2c14e'; g.font = '700 30px "Arial Narrow", sans-serif'; g.fillText('¡ESTE SÁBADO!', 192, 470);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+
 function tileTexture(): THREE.CanvasTexture {
   const c = document.createElement('canvas'); c.width = 128; c.height = 128;
   const g = c.getContext('2d')!;
@@ -114,6 +134,7 @@ export class WorldView {
   private disposables: { dispose(): void }[] = [];
   private fountainWater: THREE.Mesh | null = null;
   life: CityLife;
+  private barrios!: Barrios;
   private sky!: THREE.Mesh;
   private sparring: { a: FighterModel; b: FighterModel; pa: Pose; pb: Pose; cx: number; cz: number } | null = null;
   /** Personajes de la historia que esperan junto a la marca del capítulo */
@@ -145,6 +166,8 @@ export class WorldView {
     this.buildPlaza();
     this.buildPosters();
     this.buildSparring();
+    this.barrios = buildBarrios(this.layout, DISTRICTS);
+    this.group.add(this.barrios.group);
     // gente y coches
     const cheap = stage.quality === 'baja';
     const ring = this.layout.boxes.find((b) => b.poi === 'ring_calle');
@@ -349,27 +372,60 @@ export class WorldView {
   }
 
   /** Carteles con las caras de los luchadores en la fachada del estadio y en la plaza */
+  /**
+   * Las fotos de los luchadores, dentro del mundo: una pantalla gigante en el estadio que va cambiando de luchador y
+   * vallas publicitarias en las azoteas de cada barrio (cada luchador en su barrio).
+   */
   private buildPosters() {
-    const ids = ['elso', 'petisui', 'pablo motos', 'pepe the gay dragon', 'kongui', 'ansol', 'big mac', 'perro cheetos'];
-    const st = this.layout.boxes.find((b) => b.poi === 'matamoros');
-    if (!st) return;
     const loader = new THREE.TextureLoader();
-    const front = st.z + st.d / 2 + 0.08;
-    const xs = [-12.4, -9.6, 9.6, 12.4, -6.8, 6.8];
-    xs.forEach((dx, i) => {
-      const id = ids[i % ids.length];
-      let url: string | null = null;
-      try { const f = fighterById(id); url = f.pfp ?? f.portrait; } catch { url = null; }
-      const frame = this.mesh(new THREE.PlaneGeometry(2.6, 3.4), new THREE.MeshBasicMaterial({ color: 0xe7b53b }), st.x + dx, i < 4 ? 4.3 : 9.6, front);
-      void frame;
-      if (!url) return;
-      const tex = loader.load(url); tex.colorSpace = THREE.SRGBColorSpace;
-      this.disposables.push(tex);
-      this.mesh(new THREE.PlaneGeometry(2.3, 2.6), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }), st.x + dx, (i < 4 ? 4.3 : 9.6) + 0.25, front + 0.02);
-      const name = (() => { try { return fighterById(id).name.toUpperCase(); } catch { return id.toUpperCase(); } })();
-      this.mesh(new THREE.PlaneGeometry(2.3, 0.5), new THREE.MeshBasicMaterial({ map: textTexture(name, '#101014', '#f2c14e', 512, 112, 54), toneMapped: false }), st.x + dx, (i < 4 ? 4.3 : 9.6) - 1.3, front + 0.02);
-    });
+    const photo = (id: string) => { try { const f = fighterById(id); const u = f.pfp ?? f.portrait; if (!u) return null; const t = loader.load(u); t.colorSpace = THREE.SRGBColorSpace; this.disposables.push(t); return { t, name: f.name }; } catch { return null; } };
+    // pantalla gigante del estadio de Matamoros
+    const st = this.layout.boxes.find((b) => b.poi === 'matamoros');
+    if (st) {
+      const front = st.z + st.d / 2 + 0.1;
+      const ids = ['elso', 'petisui', 'pablo motos', 'pepe the gay dragon', 'kongui', 'ansol', 'big mac', 'perro cheetos', 'darksinfacha', 'big boom'];
+      const pics = ids.map(photo).filter((x): x is NonNullable<typeof x> => !!x);
+      const frame = merge([box(9.6, 6.4, 0.5, 0, 0, -0.25, 0x101014), box(9.9, 0.3, 0.6, 0, 3.3, -0.2, 0xc1272d), box(9.9, 0.3, 0.6, 0, -3.3, -0.2, 0xc1272d), box(0.3, 2.2, 0.3, -3, -4.4, -0.4, 0x2a2a30), box(0.3, 2.2, 0.3, 3, -4.4, -0.4, 0x2a2a30)])!;
+      this.mesh(frame, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 }), st.x, st.h + 4.4, front, true);
+      const scrMat = new THREE.MeshBasicMaterial({ toneMapped: false, color: 0xffffff });
+      const scr = this.mesh(new THREE.PlaneGeometry(5.4, 5.4), scrMat, st.x - 1.8, st.h + 4.4, front + 0.02);
+      const capMat = new THREE.MeshBasicMaterial({ toneMapped: false });
+      this.mesh(new THREE.PlaneGeometry(3.6, 5.4), capMat, st.x + 2.8, st.h + 4.4, front + 0.02);
+      let k = -1;
+      const next = () => {
+        k = (k + 1) % Math.max(1, pics.length);
+        const p = pics[k]; if (!p) return;
+        scrMat.map = p.t; scrMat.needsUpdate = true;
+        capMat.map?.dispose(); capMat.map = captionTexture(p.name); capMat.needsUpdate = true;
+      };
+      next();
+      this.screenTimer = { t: 0, next };
+      void scr;
+    }
+    // vallas en las azoteas: cada luchador cerca de su barrio
+    const homes: [string, string][] = [['elso', 'playa'], ['perro cheetos', 'playa'], ['petisui', 'viviendas'], ['big mac', 'viviendas'], ['kongui', 'aldea'], ['ansol', 'manchester'], ['kent', 'manchester'], ['yosuke', 'industrial'], ['pablo motos', 'torre'], ['sergio', 'torre'], ['pepe the gay dragon', 'plaza'], ['darksinfacha', 'santiago']];
+    const used = new Set<Box>();
+    for (const [id, d] of homes) {
+      const dist = DISTRICTS.find((x) => x.id === d);
+      if (!dist) continue;
+      // un edificio con nombre de calle, cerca del centro del barrio, que no esté ya usado
+      const cands = this.layout.boxes.filter((b) => b.district === d && !b.poi && b.w > 7 && b.d > 6 && b.h > 5 && !used.has(b))
+        .sort((a, b) => Math.hypot(a.x - dist.center[0], a.z - dist.center[1]) - Math.hypot(b.x - dist.center[0], b.z - dist.center[1]));
+      const b = cands[0];
+      const p = photo(id);
+      if (!b || !p) continue;
+      used.add(b);
+      const yaw = Math.atan2(dist.center[0] - b.x, dist.center[1] - b.z);
+      const g = new THREE.Group();
+      g.add(new THREE.Mesh(merge([box(6.4, 3.8, 0.3, 0, 3.9, -0.2, 0x16130f), box(0.25, 2.2, 0.25, -2.4, 1.1, -0.3, 0x3a3a40), box(0.25, 2.2, 0.25, 2.4, 1.1, -0.3, 0x3a3a40), box(6.6, 0.18, 0.5, 0, 1.95, 0, 0xc1272d)])!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6 })));
+      const ph = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 3.4), new THREE.MeshBasicMaterial({ map: p.t, toneMapped: false })); ph.position.set(-1.45, 3.9, -0.03); g.add(ph);
+      const cap = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 3.4), new THREE.MeshBasicMaterial({ map: captionTexture(p.name), toneMapped: false })); cap.position.set(1.65, 3.9, -0.03); g.add(cap);
+      g.position.set(b.x, b.h, b.z); g.rotation.y = yaw;
+      g.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
+      this.group.add(g);
+    }
   }
+  private screenTimer: { t: number; next: () => void } | null = null;
 
   /** Ring callejero de la plaza: dos luchadores dan un combate de exhibición sin parar */
   private buildSparring() {
@@ -434,20 +490,40 @@ export class WorldView {
         beam.position.y = 23; obj.add(beam);
         const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), new THREE.MeshBasicMaterial({ color: 0xffd45e, toneMapped: false }));
         star.position.y = 3.6; star.userData.spin = true; obj.add(star);
-        const lab = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture('HISTORIA', 'transparent', '#ffd45e', 256, 64, 40), depthTest: false, transparent: true }));
-        lab.scale.set(3, 0.75, 1); lab.position.y = 4.6; obj.add(lab);
+        this.floatBadge('★', 'HISTORIA', '#ffd45e', spot.x, 5.2, spot.z, 3.6, p);
       }
       if (p.kind === 'gym' || p.kind === 'shop' || p.kind === 'arena' || p.kind === 'tower') {
         // el letrero ya lo pone el edificio
       }
       if (p.kind === 'minigame') {
-        const lab = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture('MINIJUEGO', 'transparent', '#3aff9a', 256, 64, 38), depthTest: false, transparent: true }));
-        lab.scale.set(3, 0.75, 1); lab.position.y = 3.2; obj.add(lab);
+        this.floatBadge('🎮', 'MINIJUEGO', '#3aff9a', spot.x, 3.6, spot.z, 3.2, p);
       }
       obj.position.set(spot.x, 0, spot.z);
       this.group.add(obj);
       this.poiMeshes.push({ p, obj, spot });
     }
+  }
+
+  /** Insignias del cielo: se ven de lejos y se desvanecen al acercarte */
+  private badges: { s: THREE.Sprite; x: number; z: number; base: number; poi?: PoiDef }[] = [];
+  private floatBadge(icon: string, text: string, color: string, x: number, y: number, z: number, w: number, poi?: PoiDef): THREE.Sprite {
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: badgeTexture(icon, text, color), depthTest: false, transparent: true }));
+    s.scale.set(w, w * 0.3125, 1); s.position.set(x, y, z); s.renderOrder = 5;
+    this.group.add(s);
+    this.badges.push({ s, x, z, base: y, poi });
+    return s;
+  }
+  private updateBadges() {
+    for (const b of this.badges) {
+      const d = Math.hypot(b.x - this.px, b.z - this.pz);
+      // aparece de lejos, flota y se desvanece al acercarte (a menos de 6 m ya no está)
+      const k = smooth(6, 16, d) * (1 - smooth(70, 95, d));
+      const vis = b.poi ? this.bridge.poiVisible(b.poi) : true;
+      (b.s.material as THREE.SpriteMaterial).opacity = k;
+      b.s.visible = k > 0.02 && vis && !this.cine && b.s.visible !== undefined && (b.s.userData.hidden !== true);
+      b.s.position.y = b.base + Math.sin(this.time * 1.6 + b.x) * 0.18;
+    }
+    if (this.screenTimer) { this.screenTimer.t += 0.016; if (this.screenTimer.t > 4) { this.screenTimer.t = 0; this.screenTimer.next(); } }
   }
 
   private buildStickers() {
@@ -457,14 +533,24 @@ export class WorldView {
       obj.position.set(spot.x, 1.0, spot.z); obj.userData.spin = true;
       this.group.add(obj); this.stickerMeshes.push({ id: s.id, obj, x: spot.x, z: spot.z });
     }
-    for (const g of GRAFFITI) {
+    // grafitis: pintados como murales en la pared más cercana (o en un muro de hormigón si no hay pared)
+    GRAFFITI.forEach((g, i) => {
       const spot = this.layout.spots['graffiti:' + g.id];
-      const panel = new THREE.Mesh(new THREE.PlaneGeometry(3.4, 1.8), new THREE.MeshBasicMaterial({ map: textTexture(g.name.replace(/[«»]/g, ''), '#1a1418', '#ff5ab4', 512, 256, 44), toneMapped: false, side: THREE.DoubleSide }));
-      panel.position.set(spot.x, 1.4, spot.z); this.group.add(panel);
-      const cam = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture('FOTO', 'transparent', '#ff9aff', 128, 64, 36), depthTest: false, transparent: true }));
-      cam.scale.set(1.6, 0.8, 1); cam.position.set(spot.x, 3.0, spot.z); cam.userData.graffiti = g.id; this.group.add(cam);
+      const wall = nearestWall(this.layout, spot.x, spot.z);
+      const mat = new THREE.MeshStandardMaterial({ map: muralTexture(g.name, i + 3), transparent: true, roughness: 0.9, polygonOffset: true, polygonOffsetFactor: -2 });
+      const panel = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 2.3), mat);
+      if (wall) { panel.position.set(wall.x, 1.9, wall.z); panel.rotation.y = wall.yaw; }
+      else {
+        // muro suelto detrás del sitio de la foto, mirando hacia donde está la calle
+        const yaw = Math.atan2(-spot.x, -spot.z);
+        const wx = spot.x - Math.sin(yaw) * 2.2, wz = spot.z - Math.cos(yaw) * 2.2;
+        this.mesh(new THREE.BoxGeometry(5.2, 3, 0.35), std(0x8a8478, 0.95), wx, 1.5, wz, true).rotation.y = yaw;
+        panel.position.set(wx + Math.sin(yaw) * 0.19, 1.6, wz + Math.cos(yaw) * 0.19); panel.rotation.y = yaw;
+      }
+      this.group.add(panel); this.disposables.push(panel.geometry, mat);
+      const cam = this.floatBadge('📷', 'FOTO', '#ff7ac8', spot.x, 3.2, spot.z, 2.4);
       this.graffitiSprites.push({ id: g.id, panel, tag: cam });
-    }
+    });
   }
   private graffitiSprites: { id: string; panel: THREE.Mesh; tag: THREE.Sprite }[] = [];
 
@@ -574,7 +660,9 @@ export class WorldView {
     for (const lr of this.lockedRects) if (!this.bridge.isOpen(lr.d.id) && x > lr.x0 + 0.2 && x < lr.x1 - 0.2 && z > lr.z0 + 0.2 && z < lr.z1 - 0.2) return true;
     return false;
   }
-  private free(x: number, z: number) { return !this.layout.blocked(x, z, 0.42) && !this.lockedAt(x, z) && !this.life?.carBlocks(x, z); }
+  /** Modo dev: atravesar paredes y velocidad extra */
+  devNoclip = false; devSpeed = 1;
+  private free(x: number, z: number) { if (this.devNoclip) return Math.abs(x) < this.layout.worldSize + 40 && Math.abs(z) < this.layout.worldSize + 40; return !this.layout.blocked(x, z, 0.42) && !this.lockedAt(x, z) && !this.life?.carBlocks(x, z); }
 
   teleport(x: number, z: number, yaw?: number) { this.px = x; this.pz = z; if (yaw != null) this.yaw = yaw; this.camYaw = (yaw ?? this.yaw) + Math.PI; this.snapCamera(); }
 
@@ -585,7 +673,7 @@ export class WorldView {
     this.rig.forward.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     this.rig.right.set(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
     if (this.riding) { this.updateRide(dt, active ? mx : 0, active ? mz : 0, run); this.afterMove(dt, active); return; }
-    const speed = run ? 7.4 : 4.4;
+    const speed = (run ? 7.4 : 4.4) * this.devSpeed;
     const len = Math.hypot(mx, mz);
     this.moving = active && len > 0.1;
     this.running = this.moving && run;
@@ -774,7 +862,9 @@ export class WorldView {
       s.obj.visible = vis;
       if (vis) { s.obj.rotation.y = t * 2.2; s.obj.position.y = 1.0 + Math.sin(t * 3 + s.x) * 0.12; }
     }
-    for (const g of this.graffitiSprites) { const near = Math.abs(g.panel.position.x - this.px) + Math.abs(g.panel.position.z - this.pz) < 70; g.panel.visible = near; g.tag.visible = near && !this.bridge.graffitiDone(g.id); }
+    for (const g of this.graffitiSprites) { g.tag.userData.hidden = this.bridge.graffitiDone(g.id); }
+    this.updateBadges();
+    this.barrios.update(this.time, this.px, this.pz);
     if (this.sea) { (this.sea.material as THREE.MeshStandardMaterial).color.setHex(0x1f6f9a).multiplyScalar(0.55 + 0.45 * this.daylight + Math.sin(t * 0.7) * 0.03); this.sea.position.y = -0.15 + Math.sin(t * 0.8) * 0.05; }
     if (this.fire) { this.fire.scale.set(1, 0.9 + 0.25 * Math.sin(t * 13) + 0.1 * Math.sin(t * 29), 1); (this.fire.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.65 * this.night; }
     if (this.fountainWater) this.fountainWater.position.y = 0.88 + Math.sin(t * 2) * 0.02;
@@ -999,6 +1089,7 @@ export class WorldView {
     this.storyCast = []; this.sceneCast = [];
     if (this.sparring) { this.sparring.a.dispose(); this.sparring.b.dispose(); }
     this.life.dispose();
+    this.barrios.dispose();
     for (const d of this.disposables) { try { d.dispose(); } catch { /* ya liberado */ } }
   }
 }

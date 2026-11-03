@@ -1,5 +1,6 @@
 import type { ArenaId, Difficulty, FighterData } from '../combat/types';
 import { kbd } from '../input/glyphs';
+import { voice } from '../content/voices';
 import type { Game, ResultInfo, SurvivalRun, VersusSetup } from '../game/Game';
 import { PERKS, perkById, type Perk } from '../modes/Survival';
 import type { PadAction } from '../input/PadNav';
@@ -665,8 +666,9 @@ export class Screens {
   }
 
   /** Escena de diálogo previa al combate */
-  showDialogue(lines: { who: string; text: string }[], a: FighterData, b: FighterData, done: () => void) {
+  showDialogue(rawLines: { who: string; text: string }[], a: FighterData, b: FighterData, done: () => void) {
     const g = this.game;
+    const lines = rawLines.map((l) => ({ who: l.who, text: voice(l.who, l.text) }));
     const sc = g.showcase;
     sc?.setFighter(0, a); sc?.setFighter(1, b);
     if (sc) sc.mode = 'close';
@@ -878,6 +880,16 @@ export class Screens {
     const fighter = (id: string) => g.roster.find((r) => r.id === id) ?? g.world.civilData(id);
     const show = (l: StoryLine) => {
       onLine?.(l.who);
+      // «cartel»: rótulo grande en mitad de la pantalla (saltos en el tiempo, títulos)
+      const card = n.querySelector('.scard');
+      card?.remove();
+      box.classList.toggle('hidden', l.who === 'cartel');
+      if (l.who === 'cartel') {
+        n.appendChild(el('div', { class: 'scard' }, [el('i', {}), el('b', {}, l.text)]));
+        Audio.sfx('heavy');
+        typed = true; textBox.textContent = l.text;
+        return;
+      }
       const f = fighter(l.who);
       const narr = l.who === 'narrador';
       nameBox.textContent = narr ? '' : f?.name ?? (l.who === 'arbitro' ? 'Árbitro' : l.who);
@@ -900,7 +912,7 @@ export class Screens {
         choiceBox.appendChild(el('button', { class: 'btn dchoice', 'data-nav': true, onClick: (e: Event) => {
           e.stopPropagation(); Audio.sfx('confirm'); onChoice(c); choosing = false; clear(choiceBox); hint.style.display = '';
           scene = { ...scene!, choices: undefined };
-          lines = (c.reply ?? []).filter((l) => lineVisible(l, flags())); i = -1;
+          lines = (c.reply ?? []).filter((l) => lineVisible(l, flags())).map((l) => ({ ...l, text: voice(l.who, l.text) })); i = -1;
           if (!lines.length) { nextScene(); return; }
           advance();
         } }, [el('span', {}, c.text)]));
@@ -922,7 +934,8 @@ export class Screens {
     };
     const playScene = (sc: StoryScene) => {
       scene = { ...sc, choices: sc.choices?.filter((c) => holds(c.if, flags())) };
-      lines = sc.lines.filter((l) => lineVisible(l, flags()));
+      lines = sc.lines.filter((l) => lineVisible(l, flags())).map((l) => ({ ...l, text: voice(l.who, l.text) }));
+      n.classList.toggle('recuerdo', sc.mood === 'recuerdo');
       cast = (sc.cast ?? [...new Set(lines.map((l) => l.who).filter((w) => fighter(w)))]).slice(0, 2);
       if (sc.bg && g.showcase && g.showcase.arena.id !== sc.bg) g.openShowcase(sc.bg);
       const sk = g.save.skins?.['chema'];
@@ -937,6 +950,7 @@ export class Screens {
     const key = (e: KeyboardEvent) => { if (this.cur !== n) { window.removeEventListener('keydown', key); return; } if ((e.key === ' ' || e.key === 'Enter') && !choosing) { advance(); e.preventDefault(); } };
     window.addEventListener('keydown', key);
     box.addEventListener('click', advance);
+    n.addEventListener('click', (e) => { if (e.target === n || (e.target as HTMLElement).closest('.scard')) advance(); });
     this.set(n);
     this.confirmHandler = advance;
     nextScene();
@@ -1087,6 +1101,7 @@ export class Screens {
         toggle('Voz del árbitro (cuenta del pin)', 'voice'), toggle('Sacudida de cámara', 'shake'), toggle('Mostrar FPS', 'fps'),
         select('Calidad gráfica', 'quality', [['auto', 'Auto'], ['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta']]),
         select('Controles táctiles', 'touch', [['auto', 'Auto'], ['on', 'Siempre'], ['off', 'Nunca']]),
+        el('div', { class: 'srow' }, [el('span', {}, 'Modo desarrollador (F2 o botón DEV)'), (() => { const on = () => !!g.save.dev?.on; const b = el('button', { class: 'chip' + (on() ? ' on' : ''), 'data-nav': true, onClick: () => { g.save.dev = { stats: {}, ...(g.save.dev ?? {}), on: !on() }; b.classList.toggle('on', on()); b.textContent = on() ? 'Sí' : 'No'; g.commitSettings(); g.dev.sync(); this.click(); } }, on() ? 'Sí' : 'No'); return b; })()]),
         el('div', { class: 'srow' }, [el('span', {}, 'Progreso guardado'), this.btn('Borrar', () => { if (confirm('¿Borrar victorias, logros y luchadores desbloqueados?')) { localStorage.removeItem('el-hoyo-wrestling-v1'); location.reload(); } }, 'small danger')]),
       ]),
     ]);

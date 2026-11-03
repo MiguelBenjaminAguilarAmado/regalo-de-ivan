@@ -101,6 +101,13 @@ export const NPCS: NpcDef[] = [
     quips: ['Soy Alesinfacha. Bueno, Darksinfacha. Es largo de explicar.', 'No es un enchufe: es una recomendación familiar.', 'La bolsa me da personalidad. Y calor.'],
   },
   {
+    id: 'betico', district: 'viviendas', at: [9, -6], yaw: Math.PI,
+    talks: [
+      talk({ notFlag: 'betico_hola' }, 'betico', L('betico', '¡Quillo, pasa a la peña! Aquí vemos al Betis y las peleas del Hoyo en la misma tele. Viva er Betis manque pierda.'), L(C, '¿Y si pierde?'), L('betico', 'Pues viva igual, hombre. Por eso se dice así.')),
+    ],
+    quips: ['¡Musho Betis!', 'Si ganas el Hoyo Champion te pagamos el carné de socio.', 'Manque pierda, manque pierda… pero que gane hoy, por favor.'],
+  },
+  {
     id: 'abuela', district: 'viviendas', at: [-14, 0], yaw: Math.PI / 2,
     talks: [talk({ notFlag: 'abuela_hola' }, 'abuela', L('abuela', 'Hijo, desde mi balcón lo veo todo: quién entra al garito, quién sale con la cartera más ligera… Ven a verme cuando tengas dudas.'))],
     quips: ['Hay pegatinas del Hoyo por toda la ciudad. En mi época eran cromos.', 'Petisui debe tres meses de alquiler. Y una silla.', 'Si ves un grafiti bonito, hazle una foto. Con la cámara, hijo, no con los ojos.'],
@@ -148,7 +155,7 @@ export const NPCS: NpcDef[] = [
     id: 'pepe the gay dragon', district: 'playa', at: [30, 2], fighter: true, yaw: Math.PI,
     alt: { cond: { chapter: 'oficina' }, district: 'torre', at: [8, 12] },
     talks: [talk(undefined, 'pepe the gay dragon', L('pepe the gay dragon', 'Soy un unicornio. Un unicornio muy majestuoso. Lo digo yo, que soy el unicornio.'))],
-    quips: ['El cuerno es de verdad. Pregúntale a Petisui.', 'Me he vuelto a ir con un jefe nuevo. Esta vez no hay letra pequeña.', 'Un solo golpe. Un solo cuerno.'],
+    quips: ['=Ola chicoz, soy yo ¡Pepe! que paza chavalez', 'El cuerno es de verdad. Pregúntale a Petisui.', 'Me he vuelto a ir con un jefe nuevo. Esta vez no hay letra pequeña.', 'Un solo golpe. Un solo cuerno.'],
   },
   // =================================================================== MANCHESTER
   {
@@ -210,6 +217,13 @@ export const NPCS: NpcDef[] = [
     id: 'hincha', district: 'santiago', at: [-6, 6], yaw: Math.PI,
     talks: [talk({ notFlag: 'hincha_hola' }, 'hincha', L('hincha', '¡Chi, chi, chi! ¡Le, le, le! ¡Viva Chile! ¿Tú eres el que aguantó el Gauntlet? ¡Bombo para el campeón!'))],
     quips: ['¡Chi, chi, chi!', 'Cuando se va la luz, el bombo se oye más.', 'Aquí se sufre y se canta. Todo a la vez.'],
+  },
+  {
+    id: 'canalla', district: 'santiago', at: [20, 11], yaw: Math.PI,
+    talks: [
+      talk({ notFlag: 'canalla_hola' }, 'canalla', L('canalla', '¡Ey, gallego! Soy de Rosario Central, la Academia, el más grande de Rosario. ¡Vamos Canalla!'), L(C, 'Yo no soy gallego, soy de Sevilla.'), L('canalla', 'Para mí todos los de allá son gallegos, che. No te ofendas, es con cariño.')),
+    ],
+    quips: ['¡Vamos Canalla, que esta tarde tenemos que ganar!', 'El chileno dice que su estadio es más lindo. Pobre, no conoce el Gigante de Arroyito.', 'Si ganás el Gauntlet te hago socio honorario de Central.'],
   },
   {
     id: 'vendedor', district: 'santiago', at: [12, 6], yaw: Math.PI,

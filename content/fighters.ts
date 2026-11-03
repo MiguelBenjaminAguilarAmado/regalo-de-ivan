@@ -78,6 +78,7 @@ export const CONFIGS: FighterConfig[] = [
     skins: [
       {
         id: 'manchester', name: 'Hoyo Champion (Manchester)',
+        unlock: { achievement: 'w_apuestas', hint: 'Gana 5 apuestas en el garito de las 3000' },
         description: 'El traje de la correa de Manchester: el main event contra Kent, donde conservó su título de Hoyo Champion. Sombrero pirata, camisa azul, corbata negra y el cinturón.',
         appearance: { hat: { kind: 'tricornio', color: 0x1c1f2a }, outfit: 'traje', outfitColor: 0x8a90d8, trunksColor: 0x1a1a22, accent: 0x111114, belt: 0x16130f },
       },
@@ -113,11 +114,13 @@ export const CONFIGS: FighterConfig[] = [
     skins: [
       {
         id: 'momia', name: 'Momia romana',
+        unlock: { achievement: 'despedido', hint: 'Gana con «La hora de Pablo Motos»' },
         description: 'Pablo Motos ha traído muchos trajes al EHW: este es el de momia con casco de soldado romano.',
         appearance: { skin: 0xd8cdb0, hair: null, beard: null, glasses: false, outfit: 'desnudo', outfitColor: 0xd8cdb0, trunksColor: 0xc9bd9a, accent: 0x8a7a55, wraps: 0xcfc3a0, bandages: 0xe8dfc4, hat: { kind: 'casco', color: 0xb08a3a } },
       },
       {
         id: 'astronauta', name: 'Astronauta alien',
+        unlock: { achievement: 'w_torre', hint: 'Sube los 10 pisos de la Torre Motos' },
         description: 'Otro de sus trajes míticos: astronauta con una máscara de alien.',
         appearance: { hair: null, beard: null, glasses: false, outfit: 'traje', outfitColor: 0xe8ecf2, trunksColor: 0xe8ecf2, accent: 0xff6a2a, wraps: 0xdadde4, backpack: 0xb8bcc6, mask: 'alien' },
       },
@@ -255,6 +258,7 @@ export const CONFIGS: FighterConfig[] = [
     skins: [
       {
         id: 'alesinfacha', name: 'Alesinfacha',
+        unlock: { achievement: 'w_pelea25', hint: 'Gana 25 combates callejeros en Hoyo' },
         description: 'Darksinfacha se llamaba originalmente Alesinfacha, y este traje lo trae de vuelta: bolsa y camisa blancas, con una sudadera blanca encima.',
         appearance: { mask: 'bolsa', maskColor: 0xf2f2f2, outfit: 'sudadera', outfitColor: 0xf4f4f4, trunksColor: 0xdedede, accent: 0x7dc3ff },
       },
