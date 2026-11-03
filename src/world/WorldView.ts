@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { FighterModel } from '../fighters/FighterModel';
-import { GUARD, blendPose, mk, type Pose } from '../fighters/Pose';
+import { ANIMS, GUARD, attackPose, blendPose, mk, type Pose } from '../fighters/Pose';
+import { CityLife } from './CityLife';
+import { fighterById } from '../content/roster';
 import type { Appearance } from '../combat/types';
 import type { Stage } from '../render/Stage';
 import { windowsTexture } from '../arenas/Azotea';
@@ -31,8 +33,17 @@ export interface WorldBridge {
   npcName(id: string): string;
   /** Hora del mundo (0-24) para la luz */
   hour(): number;
+  /** Quién espera junto a la marca del capítulo pendiente (se ve de pie en la calle) */
+  storyActors(): { poi: string; ids: string[] } | null;
+  /** Una frase al azar de la gente de la calle */
+  chatter(): string;
 }
 
+interface Actor { id: string; model: FighterModel; tag: THREE.Sprite; x: number; z: number; yaw: number; pose: Pose; phase: number; talk: number }
+
+const STUN: Partial<Pose> = { torso: [-0.3, 0.2, 0.1], head: [-0.35, 0, 0], lU: [-0.3, 0, 0.7], rU: [-0.25, 0, -0.6], lF: [-0.6, 0, 0], rF: [-0.6, 0, 0], hips: [-0.08, 0, 0] };
+const FLEX: Partial<Pose> = ANIMS.taunt.hit;
+const TALK: Partial<Pose> = { lU: [-0.7, 0, 0.35], lF: [-1.2, 0, 0], rU: [-0.2, 0, -0.2], rF: [-0.5, 0, 0], head: [-0.05, 0, 0] };
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -46,6 +57,22 @@ function textTexture(text: string, bg: string, fg: string, w = 512, h = 128, siz
   if (bg === 'transparent') { g.lineWidth = 8; g.strokeStyle = 'rgba(0,0,0,0.85)'; g.strokeText(text, w / 2, h / 2); }
   g.fillText(text, w / 2, h / 2);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
+  return t;
+}
+
+/** Adoquines de la plaza */
+function tileTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+  const g = c.getContext('2d')!;
+  g.fillStyle = '#b9ab92'; g.fillRect(0, 0, 128, 128);
+  const cols = ['#c8bba2', '#b1a388', '#c2b398', '#a99a80', '#d0c3aa'];
+  for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+    g.fillStyle = cols[(x * 7 + y * 3) % cols.length];
+    const off = y % 2 ? 16 : 0;
+    g.fillRect(((x * 32 + off) % 128) + 2, y * 32 + 2, 28, 28);
+    if (off && x === 3) g.fillRect(2, y * 32 + 2, 14, 28);
+  }
+  const t = new THREE.CanvasTexture(c); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4;
   return t;
 }
 
@@ -81,6 +108,17 @@ export class WorldView {
   private skyColor = new THREE.Color();
   private disposables: { dispose(): void }[] = [];
   private fountainWater: THREE.Mesh | null = null;
+  life: CityLife;
+  private sky!: THREE.Mesh;
+  private sparring: { a: FighterModel; b: FighterModel; pa: Pose; pb: Pose; cx: number; cz: number } | null = null;
+  /** Personajes de la historia que esperan junto a la marca del capítulo */
+  private storyCast: Actor[] = [];
+  private storyKey = '';
+  /** Personajes que aparecen para una escena en la calle */
+  private sceneCast: Actor[] = [];
+  /** Cámara de cine durante las escenas */
+  private cine: { cx: number; cz: number; h: number; lx: number; lz: number; t: number } | null = null;
+  private festoon: THREE.Mesh[] = [];
 
   constructor(private stage: Stage, private bridge: WorldBridge) {
     const npcReqs: { key: string; district: string; at: [number, number] }[] = [];
@@ -97,6 +135,22 @@ export class WorldView {
     this.buildStickers();
     this.buildNpcs();
     this.buildLocks();
+    this.buildSky();
+    this.buildPlaza();
+    this.buildPosters();
+    this.buildSparring();
+    // gente y coches
+    const cheap = stage.quality === 'baja';
+    const roadDistricts = DISTRICTS.filter((d) => d.id !== 'plaza');
+    const ring = this.layout.boxes.find((b) => b.poi === 'ring_calle');
+    this.life = new CityLife({
+      layout: this.layout,
+      allowed: (x, z) => !this.lockedAt(x, z),
+      roadOpen: (i) => bridge.isOpen(roadDistricts[i]?.id ?? 'plaza'),
+      people: cheap ? 34 : 56, cars: cheap ? 9 : 14,
+      crowds: ring ? [{ x: ring.x, z: ring.z, r: 4.7, n: cheap ? 8 : 12 }] : [],
+    });
+    this.group.add(this.life.group);
     // luces
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(stage.quality === 'baja' ? 1024 : 2048, stage.quality === 'baja' ? 1024 : 2048);
@@ -122,10 +176,12 @@ export class WorldView {
       const m = this.mesh(new THREE.BoxGeometry(d.size[0], 0.3, d.size[1]), std(d.ground, 0.95), d.center[0], -0.08, d.center[1]);
       m.receiveShadow = true;
     }
-    // plaza circular
-    const plaza = this.mesh(new THREE.CylinderGeometry(22, 22, 0.2, 48), std(0xb8ad98, 0.8), 0, 0.02, 0);
+    // plaza circular: adoquines (con textura) — el parque se monta en buildPlaza()
+    const tiles = tileTexture();
+    tiles.repeat.set(11, 11);
+    const plaza = this.mesh(new THREE.CylinderGeometry(22, 22, 0.2, 48), new THREE.MeshStandardMaterial({ color: 0xffffff, map: tiles, roughness: 0.9 }), 0, 0.02, 0);
     void plaza;
-    const ring = this.mesh(new THREE.TorusGeometry(15, 0.25, 6, 64), std(0xc1272d, 0.6), 0, 0.14, 0); ring.rotation.x = Math.PI / 2;
+    const curb = this.mesh(new THREE.TorusGeometry(22, 0.22, 6, 72), std(0x8a8478, 0.8), 0, 0.12, 0); curb.rotation.x = Math.PI / 2;
     // calles
     for (const r of this.layout.roads) {
       const len = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
@@ -134,6 +190,13 @@ export class WorldView {
       m.rotation.set(-Math.PI / 2, 0, Math.atan2(r.x2 - r.x1, -(r.z2 - r.z1)) - Math.PI / 2 + Math.PI / 2 * 0);
       // orientar la calle a lo largo del segmento
       m.rotation.set(0, 0, 0); m.rotation.x = -Math.PI / 2; m.rotation.order = 'YXZ'; m.rotation.y = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+      // aceras a los lados
+      for (const side of [-1, 1]) {
+        const L2 = Math.max(0, len - 35), mx = (r.x1 + r.x2) / 2, mz = (r.z1 + r.z2) / 2, ux = (r.x2 - r.x1) / len, uz = (r.z2 - r.z1) / len;
+        const ox = -uz * side * (r.w / 2 + 1.1), oz = ux * side * (r.w / 2 + 1.1);
+        const sw = this.mesh(new THREE.BoxGeometry(L2, 0.18, 2.2), std(0xa8a196, 0.9), mx + ox + ux * 5.5, 0.09, mz + oz + uz * 5.5);
+        sw.rotation.y = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+      }
       // línea discontinua central
       const dash = this.mesh(new THREE.PlaneGeometry(len, 0.25), new THREE.MeshBasicMaterial({ color: 0xe8d070 }), (r.x1 + r.x2) / 2, 0.09, (r.z1 + r.z2) / 2);
       dash.rotation.order = 'YXZ'; dash.rotation.x = -Math.PI / 2; dash.rotation.y = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
@@ -164,6 +227,7 @@ export class WorldView {
     const plain: Record<number, THREE.MeshStandardMaterial> = {};
     let ti = 0;
     for (const b of this.layout.boxes) {
+      if (b.poi === 'ring_calle') continue; // el ring callejero se dibuja aparte
       const style = DISTRICTS.find((d) => d.id === b.district)?.style;
       let mat: THREE.MeshStandardMaterial;
       if (b.poi || style === 'savanna' || style === 'beach') {
@@ -222,6 +286,182 @@ export class WorldView {
   }
   private waving: THREE.Mesh[] = [];
 
+  /** Cielo con degradado y siluetas de edificios en el horizonte (para que Hoyo no parezca una nave cerrada) */
+  private buildSky() {
+    const mat = new THREE.ShaderMaterial({
+      uniforms: { top: { value: new THREE.Color(0x3a7ad0) }, bottom: { value: new THREE.Color(0xbfe0f8) } },
+      vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }',
+      fragmentShader: 'uniform vec3 top; uniform vec3 bottom; varying vec3 vP; void main(){ float h = clamp(vP.y * 1.6 + 0.05, 0.0, 1.0); gl_FragColor = vec4(mix(bottom, top, h), 1.0); }',
+      side: THREE.BackSide, depthWrite: false, fog: false,
+    });
+    this.sky = this.mesh(new THREE.SphereGeometry(330, 24, 12), mat, 0, 0, 0);
+    this.sky.renderOrder = -10; this.sky.receiveShadow = false;
+    // horizonte: anillo de rascacielos lejanos
+    const R = (() => { let s = 1234; return () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; }; })();
+    const n = 90;
+    const im = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshStandardMaterial({ color: 0x5a6478, roughness: 1, fog: true }), n);
+    const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + R() * 0.03;
+      const r = 175 + R() * 40;
+      const x = Math.cos(a) * r, z = Math.sin(a) * r;
+      if (z > SEA_Z + 20 && Math.abs(x) < 160) continue; // por el mar, horizonte libre
+      const w = 8 + R() * 14, h = 18 + R() * 60;
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), -a);
+      m4.compose(new THREE.Vector3(x, h / 2, z), q, new THREE.Vector3(w, h, 8 + R() * 10));
+      im.setMatrixAt(i, m4);
+    }
+    im.frustumCulled = false;
+    this.group.add(im); this.disposables.push(im.geometry, im.material as THREE.Material);
+    this.skyline = im;
+  }
+  private skyline: THREE.InstancedMesh | null = null;
+
+  /** La plaza como un parque de verdad: césped, caminos, bancos, parterres, quiosco, puestos y guirnaldas de luces */
+  private buildPlaza() {
+    // césped en cuatro cuartos, entre caminos en cruz
+    const grass = std(0x4f8a3a, 0.95);
+    for (let k = 0; k < 4; k++) {
+      const g = this.mesh(new THREE.RingGeometry(6.2, 13.5, 24, 1, k * Math.PI / 2 + 0.2, Math.PI / 2 - 0.4), grass, 0, 0.135, 0);
+      g.rotation.x = -Math.PI / 2;
+    }
+    // bordillo de los parterres
+    const hedge = std(0x2f6a2a, 0.9);
+    for (let k = 0; k < 4; k++) {
+      const a0 = k * Math.PI / 2 + 0.2, a1 = a0 + Math.PI / 2 - 0.4;
+      for (let i = 0; i <= 6; i++) {
+        const a = a0 + (a1 - a0) * (i / 6);
+        this.mesh(new THREE.SphereGeometry(0.45, 7, 5), hedge, Math.cos(a) * 13.6, 0.35, -Math.sin(a) * 13.6, true);
+      }
+    }
+    // flores
+    const flowers = [0xff5a8a, 0xffd23a, 0xff8a3a, 0xc85aff, 0xffffff];
+    const fl = new THREE.InstancedMesh(new THREE.SphereGeometry(0.085, 5, 3), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }), 160);
+    const m4 = new THREE.Matrix4(), col = new THREE.Color();
+    let s = 77; const R = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
+    for (let i = 0; i < 160; i++) {
+      const k = i % 4, a = k * Math.PI / 2 + 0.3 + R() * (Math.PI / 2 - 0.6), r = 7 + R() * 5.8;
+      m4.makeTranslation(Math.cos(a) * r, 0.2, -Math.sin(a) * r); fl.setMatrixAt(i, m4); fl.setColorAt(i, col.setHex(flowers[i % flowers.length]));
+    }
+    fl.frustumCulled = false; this.group.add(fl); this.disposables.push(fl.geometry, fl.material as THREE.Material);
+    // bancos en los caminos
+    const wood = std(0x8a5a2e, 0.8), iron = std(0x2a2a30, 0.5, 0.5);
+    for (let k = 0; k < 4; k++) for (const side of [-1, 1]) {
+      const a = k * Math.PI / 2, r = 9.5;
+      const cx = Math.cos(a) * r + Math.cos(a + Math.PI / 2) * side * 2.6, cz = -Math.sin(a) * r - Math.sin(a + Math.PI / 2) * side * 2.6;
+      const b = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.6), wood); seat.position.y = 0.5; b.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.1), wood); back.position.set(0, 0.85, -0.28); b.add(back);
+      for (const x of [-0.95, 0.95]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.55), iron); leg.position.set(x, 0.25, 0); b.add(leg); }
+      b.position.set(cx, 0.12, cz); b.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
+      b.rotation.y = a + (side > 0 ? 0 : Math.PI);
+      this.group.add(b);
+    }
+    // quiosco de prensa y helados
+    const kio = { x: 15, z: 15 };
+    if (!this.layout.blocked(kio.x, kio.z, 1.5)) {
+      this.mesh(new THREE.CylinderGeometry(1.4, 1.4, 2.2, 8), std(0x2a6a4a, 0.6), kio.x, 1.1, kio.z, true);
+      this.mesh(new THREE.ConeGeometry(2.1, 1.1, 8), std(0xc1272d, 0.6), kio.x, 2.75, kio.z, true);
+    }
+    // puestos del mercadillo con toldos de colores
+    const awn = [0xc1272d, 0xe8b42a, 0x2a8aff, 0x2d9a5a];
+    const stalls: [number, number][] = [[8, 18.5], [-2, 19.5], [19, -3], [-19, -6]];
+    stalls.forEach(([x, z], i) => {
+      if (this.layout.blocked(x, z, 1.2)) return;
+      this.mesh(new THREE.BoxGeometry(2.4, 0.9, 1.2), std(0x8a6a4a, 0.8), x, 0.55, z, true);
+      for (const sx of [-1.1, 1.1]) this.mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 5), iron, x + sx, 1.2, z - 0.5, false);
+      const top = this.mesh(new THREE.BoxGeometry(2.8, 0.08, 1.8), std(awn[i % awn.length], 0.7), x, 2.3, z - 0.1, true);
+      top.rotation.x = 0.18;
+      // fruta / cosas encima
+      for (let j = 0; j < 5; j++) this.mesh(new THREE.SphereGeometry(0.14, 6, 4), std([0xff5a3a, 0xffd23a, 0x5ac83a][j % 3], 0.6), x - 0.8 + j * 0.4, 1.08, z + 0.1, false);
+    });
+    // guirnaldas de bombillas de la fuente a las farolas (de noche se encienden)
+    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe6a0 });
+    this.disposables.push(bulbMat);
+    const bulbGeo = new THREE.SphereGeometry(0.09, 6, 4);
+    this.disposables.push(bulbGeo);
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
+      const ex = Math.cos(a) * 19, ez = Math.sin(a) * 19;
+      const pole = this.mesh(new THREE.CylinderGeometry(0.07, 0.09, 5, 6), iron, ex, 2.5, ez, true);
+      void pole;
+      for (let i = 1; i < 14; i++) {
+        const t = i / 14, x = lerp(0, ex, t), z = lerp(0, ez, t), y = lerp(4.6, 4.9, t) - Math.sin(t * Math.PI) * 1.2;
+        const b = new THREE.Mesh(bulbGeo, bulbMat); b.position.set(x, y, z); this.group.add(b); this.festoon.push(b);
+      }
+    }
+    // mástil central sobre la fuente para las guirnaldas
+    const fp = this.layout.spots['poi:fuente'] ?? { x: 0, z: 0 };
+    this.mesh(new THREE.CylinderGeometry(0.1, 0.12, 4.8, 6), iron, fp.x, 2.6, fp.z, true);
+    this.mesh(new THREE.SphereGeometry(0.3, 10, 8), std(0xc1272d, 0.4), fp.x, 5.0, fp.z, true);
+  }
+
+  /** Carteles con las caras de los luchadores en la fachada del estadio y en la plaza */
+  private buildPosters() {
+    const ids = ['elso', 'petisui', 'pablo motos', 'pepe the gay dragon', 'kongui', 'ansol', 'big mac', 'perro cheetos'];
+    const st = this.layout.boxes.find((b) => b.poi === 'matamoros');
+    if (!st) return;
+    const loader = new THREE.TextureLoader();
+    const front = st.z + st.d / 2 + 0.08;
+    const xs = [-12.4, -9.6, 9.6, 12.4, -6.8, 6.8];
+    xs.forEach((dx, i) => {
+      const id = ids[i % ids.length];
+      let url: string | null = null;
+      try { const f = fighterById(id); url = f.pfp ?? f.portrait; } catch { url = null; }
+      const frame = this.mesh(new THREE.PlaneGeometry(2.6, 3.4), new THREE.MeshBasicMaterial({ color: 0xe7b53b }), st.x + dx, i < 4 ? 4.3 : 9.6, front);
+      void frame;
+      if (!url) return;
+      const tex = loader.load(url); tex.colorSpace = THREE.SRGBColorSpace;
+      this.disposables.push(tex);
+      this.mesh(new THREE.PlaneGeometry(2.3, 2.6), new THREE.MeshBasicMaterial({ map: tex, toneMapped: false }), st.x + dx, (i < 4 ? 4.3 : 9.6) + 0.25, front + 0.02);
+      const name = (() => { try { return fighterById(id).name.toUpperCase(); } catch { return id.toUpperCase(); } })();
+      this.mesh(new THREE.PlaneGeometry(2.3, 0.5), new THREE.MeshBasicMaterial({ map: textTexture(name, '#101014', '#f2c14e', 512, 112, 54), toneMapped: false }), st.x + dx, (i < 4 ? 4.3 : 9.6) - 1.3, front + 0.02);
+    });
+  }
+
+  /** Ring callejero de la plaza: dos luchadores dan un combate de exhibición sin parar */
+  private buildSparring() {
+    const b = this.layout.boxes.find((x) => x.poi === 'ring_calle');
+    if (!b) return;
+    const mat = std(0xefe6d5, 0.8), apron = std(0xc1272d, 0.7), post = std(0x1a1a1e, 0.4, 0.6), rope = std(0xc1272d, 0.5);
+    this.mesh(new THREE.BoxGeometry(b.w, 0.9, b.d), apron, b.x, 0.45, b.z, true);
+    this.mesh(new THREE.BoxGeometry(b.w - 0.1, 0.06, b.d - 0.1), mat, b.x, 0.93, b.z);
+    const logo = this.mesh(new THREE.RingGeometry(0.9, 1.3, 24), new THREE.MeshBasicMaterial({ color: 0xc1272d }), b.x, 0.97, b.z); logo.rotation.x = -Math.PI / 2;
+    const hw = b.w / 2 - 0.2, hd = b.d / 2 - 0.2;
+    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) this.mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.6, 8), post, b.x + sx * hw, 1.7, b.z + sz * hd, true);
+    for (const h of [1.35, 1.75, 2.15]) {
+      for (const [x, z, w, d] of [[0, -hd, b.w - 0.4, 0.05], [0, hd, b.w - 0.4, 0.05], [-hw, 0, 0.05, b.d - 0.4], [hw, 0, 0.05, b.d - 0.4]]) this.mesh(new THREE.BoxGeometry(w, 0.05, d), rope, b.x + x, h, b.z + z, false);
+    }
+    const sign = this.mesh(new THREE.PlaneGeometry(3.6, 0.7), new THREE.MeshBasicMaterial({ map: textTexture('EXHIBICIÓN', '#101014', '#f2c14e', 512, 100, 60), toneMapped: false, side: THREE.DoubleSide }), b.x, 3.0, b.z - hd);
+    void sign;
+    let la: Appearance, lb: Appearance;
+    try { la = fighterById('novato').appearance; lb = fighterById('veterano').appearance; } catch { return; }
+    const a = new FighterModel(la), c = new FighterModel(lb);
+    a.root.position.set(b.x - 0.9, 0.96, b.z); c.root.position.set(b.x + 0.9, 0.96, b.z);
+    a.root.rotation.y = Math.PI / 2; c.root.rotation.y = -Math.PI / 2;
+    this.group.add(a.root, c.root);
+    this.sparring = { a, b: c, pa: { ...GUARD }, pb: { ...GUARD }, cx: b.x, cz: b.z };
+  }
+
+  private updateSparring() {
+    const sp = this.sparring;
+    if (!sp) return;
+    if (Math.hypot(sp.cx - this.px, sp.cz - this.pz) > 70) return;
+    const t = this.time;
+    const cyc = 1.4, k = Math.floor(t / cyc), u = t % cyc;
+    const moves = ['jab', 'cross', 'hook', 'lowkick', 'jab', 'knee', 'highkick', 'taunt'];
+    const attackerA = k % 2 === 0;
+    const anim = moves[k % moves.length];
+    const atk = attackPose(anim, u, 0.3, 0.2, cyc * 0.8, false);
+    const hit = u > 0.48 && u < 0.95 && anim !== 'taunt' ? mk(STUN) : GUARD;
+    const sway = Math.sin(t * 1.3) * 0.25;
+    const ta = attackerA ? atk : hit, tb = attackerA ? hit : atk;
+    blendPose(sp.pa, ta, 0.35, sp.pa); blendPose(sp.pb, tb, 0.35, sp.pb);
+    sp.a.root.position.set(sp.cx - 0.85 + sway, 0.96, sp.cz + Math.sin(t * 0.7) * 0.4);
+    sp.b.root.position.set(sp.cx + 0.85 + sway, 0.96, sp.cz + Math.sin(t * 0.7) * 0.4);
+    sp.a.applyPose(sp.pa, t); sp.b.applyPose(sp.pb, t);
+  }
+
   private buildPois() {
     const ring = (color: number, r = 1.1) => {
       const g = new THREE.Group();
@@ -238,6 +478,9 @@ export class WorldView {
       const obj = new THREE.Group();
       if (p.kind !== 'landmark' && p.kind !== 'fountain') obj.add(ring(colorOf[p.kind] ?? 0xffffff, p.kind === 'story' ? 1.4 : 1.1));
       if (p.kind === 'story') {
+        // columna de luz alta: se ve desde lejos
+        const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.9, 46, 12, 1, true), new THREE.MeshBasicMaterial({ color: 0xffd45e, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending, fog: false }));
+        beam.position.y = 23; obj.add(beam);
         const star = new THREE.Mesh(new THREE.OctahedronGeometry(0.5, 0), new THREE.MeshBasicMaterial({ color: 0xffd45e, toneMapped: false }));
         star.position.y = 3.6; star.userData.spin = true; obj.add(star);
         const lab = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture('HISTORIA', 'transparent', '#ffd45e', 256, 64, 40), depthTest: false, transparent: true }));
@@ -340,6 +583,14 @@ export class WorldView {
     this.stage.renderer.toneMappingExposure = lerp(1.15, 1.0, day);
     const n = this.night;
     for (const m of this.windowMats) m.emissiveIntensity = n * 0.9;
+    if (this.sky) {
+      const u = (this.sky.material as THREE.ShaderMaterial).uniforms;
+      (u.bottom.value as THREE.Color).copy(this.skyColor).lerp(new THREE.Color(0xffffff), 0.25 * day);
+      (u.top.value as THREE.Color).setHex(0x05081a).lerp(new THREE.Color(0x2f6fc8), day).lerp(new THREE.Color(0x6a4a8a), dusk * 0.5);
+      this.sky.position.set(this.px, 0, this.pz);
+    }
+    if (this.skyline) (this.skyline.material as THREE.MeshStandardMaterial).color.setHex(0x0e1220).lerp(new THREE.Color(0x7a8498), day);
+    if (this.festoon.length) (this.festoon[0].material as THREE.MeshBasicMaterial).color.setHex(n > 0.3 ? 0xffd27a : 0x8a8270);
     if (this.lamps) (this.lamps.material as THREE.MeshBasicMaterial).color.setScalar(lerp(0.35, 1, n));
     void force;
   }
@@ -349,7 +600,7 @@ export class WorldView {
     for (const lr of this.lockedRects) if (!this.bridge.isOpen(lr.d.id) && x > lr.x0 + 0.2 && x < lr.x1 - 0.2 && z > lr.z0 + 0.2 && z < lr.z1 - 0.2) return true;
     return false;
   }
-  private free(x: number, z: number) { return !this.layout.blocked(x, z, 0.42) && !this.lockedAt(x, z); }
+  private free(x: number, z: number) { return !this.layout.blocked(x, z, 0.42) && !this.lockedAt(x, z) && !this.life?.carBlocks(x, z); }
 
   teleport(x: number, z: number, yaw?: number) { this.px = x; this.pz = z; if (yaw != null) this.yaw = yaw; this.camYaw = (yaw ?? this.yaw) + Math.PI; this.snapCamera(); }
 
@@ -385,6 +636,9 @@ export class WorldView {
     const d = this.layout.districtAt(this.px, this.pz);
     if (d !== this.district) { this.district = d; this.onDistrict?.(d); }
     this.updateNpcs(dt);
+    this.updateActors(dt);
+    this.updateSparring();
+    this.life.update(dt, this.px, this.pz, this.night, () => this.bridge.chatter(), !active && !this.cine);
     this.updateVisuals(dt);
     this.updateCamera(dt);
     this.updateLighting();
@@ -412,7 +666,8 @@ export class WorldView {
   private updateNpcs(dt: number) {
     for (const n of this.npcs) {
       const spot = this.bridge.npcSpot(n.t.def);
-      const here = !!spot;
+      // si el mismo personaje está esperando en una marca de la historia o en una escena, aquí no está
+      const here = !!spot && !this.storyCast.some((a) => a.id === n.t.id) && !this.sceneCast.some((a) => a.id === n.t.id);
       n.model.root.visible = here; n.tag.visible = here;
       if (!here) { n.t.x = -9999; continue; }
       const key = spot!.district === n.t.def.district && spot!.at[0] === n.t.def.at[0] && spot!.at[1] === n.t.def.at[1] ? 'npc:' + n.t.def.id : 'npcalt:' + n.t.def.id;
@@ -422,9 +677,20 @@ export class WorldView {
       const dx = this.px - p.x, dz = this.pz - p.z, d = Math.hypot(dx, dz);
       if (d < 6) { const ty = Math.atan2(dx, dz); let df = ty - n.yaw; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; n.yaw += df * (1 - Math.exp(-4 * dt)); }
       n.model.root.position.set(p.x, 0, p.z); n.model.root.rotation.y = n.yaw;
-      n.pose = blendPose(n.pose, this.idlePose(this.time, n.phase), 1 - Math.exp(-6 * dt), n.pose);
+      // los luchadores entrenan solos (sombra, posturitas) hasta que te acercas
+      let target = this.idlePose(this.time, n.phase);
+      if (n.t.def.fighter && d > 5.5) {
+        const act = Math.floor(n.phase * 7) % 3;
+        if (act === 0) {
+          const cyc = 0.9, k = Math.floor((this.time + n.phase) / cyc), u = (this.time + n.phase) % cyc;
+          target = attackPose(['jab', 'cross', 'jab', 'hook', 'knee'][k % 5], u, 0.2, 0.15, cyc * 0.85, false);
+        } else if (act === 1) target = Math.sin(this.time * 0.8 + n.phase) > 0.2 ? mk(FLEX) : target;
+        else { const u = (this.time * 1.4 + n.phase) % 4; target = u < 1 ? attackPose('highkick', u, 0.35, 0.25, 1, false) : target; }
+      }
+      n.pose = blendPose(n.pose, target, 1 - Math.exp(-10 * dt), n.pose);
       n.model.applyPose(n.pose, this.time);
       n.tag.position.set(p.x, 2.55 * (n.model.ap.height ?? 1), p.z);
+      n.tag.visible = here && !this.cine;
       // marcador de misión
       const mk2 = this.bridge.npcMarker(n.t.id);
       if (mk2 !== n.markerKind) {
@@ -443,7 +709,7 @@ export class WorldView {
     const t = this.time;
     for (const pm of this.poiMeshes) {
       const vis = this.bridge.poiVisible(pm.p);
-      pm.obj.visible = vis;
+      pm.obj.visible = vis && !(this.cine && pm.p.kind === 'story');
       pm.obj.traverse((o) => { if (o.userData.spin) { o.rotation.y = t * 2; o.position.y = 3.6 + Math.sin(t * 2.5) * 0.2; } });
     }
     for (const s of this.stickerMeshes) {
@@ -459,8 +725,129 @@ export class WorldView {
     void dt;
   }
 
+  // ------------------------------------------------------------------ personajes de la historia y de las escenas
+  private makeActor(id: string, x: number, z: number, yaw: number): Actor | null {
+    const look = this.bridge.npcLook(id);
+    if (!look) return null;
+    const model = new FighterModel(look);
+    model.root.position.set(x, 0, z); model.root.rotation.y = yaw;
+    this.group.add(model.root);
+    const tag = new THREE.Sprite(new THREE.SpriteMaterial({ map: textTexture(this.bridge.npcName(id), 'transparent', '#ffd45e', 512, 96, 46), depthTest: false, transparent: true }));
+    tag.scale.set(3.4, 0.64, 1); tag.position.set(x, 2.55 * (look.height ?? 1), z);
+    this.group.add(tag);
+    return { id, model, tag, x, z, yaw, pose: { ...GUARD }, phase: Math.random() * 10, talk: 0 };
+  }
+  private dropActor(a: Actor) {
+    this.group.remove(a.model.root, a.tag);
+    a.model.dispose();
+    const m = a.tag.material as THREE.SpriteMaterial; m.map?.dispose(); m.dispose();
+  }
+  /** Hueco libre cerca de un punto (para colocar a alguien sin meterlo en una pared) */
+  private freeNear(x: number, z: number, avoid: { x: number; z: number }[] = []): { x: number; z: number } {
+    const ok = (a: number, b: number) => !this.layout.blocked(a, b, 0.5) && !this.lockedAt(a, b) && avoid.every((p) => Math.hypot(p.x - a, p.z - b) > 1.1);
+    if (ok(x, z)) return { x, z };
+    for (let r = 0.6; r < 6; r += 0.6) for (let k = 0; k < 12; k++) { const a = (k / 12) * Math.PI * 2; const nx = x + Math.cos(a) * r, nz = z + Math.sin(a) * r; if (ok(nx, nz)) return { x: nx, z: nz }; }
+    return { x, z };
+  }
+
+  /** Coloca junto a la marca dorada del capítulo pendiente a quien te espera */
+  private syncStoryCast() {
+    const sa = this.bridge.storyActors();
+    const key = sa ? sa.poi + ':' + sa.ids.join(',') : '';
+    if (key === this.storyKey) return;
+    this.storyKey = key;
+    this.storyCast.forEach((a) => this.dropActor(a)); this.storyCast = [];
+    if (!sa) return;
+    const spot = this.layout.spots['poi:' + sa.poi];
+    if (!spot) return;
+    const used: { x: number; z: number }[] = [spot];
+    sa.ids.forEach((id, i) => {
+      const a = Math.PI * 0.5 + (i - (sa.ids.length - 1) / 2) * 0.9;
+      const p = this.freeNear(spot.x + Math.cos(a) * 2.1, spot.z - Math.sin(a) * 2.1, used);
+      used.push(p);
+      const act = this.makeActor(id, p.x, p.z, Math.PI);
+      if (act) this.storyCast.push(act);
+    });
+  }
+
+  /** Empieza una escena en la calle: aparecen los que hablan delante de Chema y la cámara pasa a modo cine */
+  beginScene(ids: string[]) {
+    this.endScene();
+    const near: { x: number; z: number }[] = [];
+    const spawn: string[] = [];
+    for (const id of ids) {
+      const n = this.npcs.find((x) => x.t.id === id && x.model.root.visible && Math.hypot(x.t.x - this.px, x.t.z - this.pz) < 9);
+      const s = this.storyCast.find((x) => x.id === id && Math.hypot(x.x - this.px, x.z - this.pz) < 9);
+      if (n) near.push({ x: n.t.x, z: n.t.z }); else if (s) near.push({ x: s.x, z: s.z }); else spawn.push(id);
+    }
+    // si los que hablan están lejos de Chema, aparecen delante de él
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw), rx = -fz, rz = fx;
+    const used: { x: number; z: number }[] = [{ x: this.px, z: this.pz }, ...near];
+    spawn.forEach((id, i) => {
+      const lat = (i - (spawn.length - 1) / 2) * 1.6;
+      const p = this.freeNear(this.px + fx * 2.7 + rx * lat, this.pz + fz * 2.7 + rz * lat, used);
+      used.push(p);
+      const act = this.makeActor(id, p.x, p.z, Math.atan2(this.px - p.x, this.pz - p.z));
+      if (act) { this.sceneCast.push(act); near.push(p); }
+    });
+    if (near.length) {
+      const cx = near.reduce((a, p) => a + p.x, 0) / near.length, cz = near.reduce((a, p) => a + p.z, 0) / near.length;
+      this.yaw = Math.atan2(cx - this.px, cz - this.pz);
+      const L = Math.hypot(cx - this.px, cz - this.pz) || 1;
+      const ux = (cx - this.px) / L, uz = (cz - this.pz) / L;
+      // por encima del hombro de Chema, mirando a quien habla
+      const side = (this.camPos.x - this.px) * -uz + (this.camPos.z - this.pz) * ux >= 0 ? 1 : -1;
+      const back = 2.6 + L * 0.35;
+      this.cine = { cx: this.px - ux * back - uz * side * 1.5, cz: this.pz - uz * back + ux * side * 1.5, h: 2.35, lx: cx * 0.65 + this.px * 0.35, lz: cz * 0.65 + this.pz * 0.35, t: 0 };
+    } else {
+      // escena en solitario (narración, llamadas): plano de tres cuartos de Chema
+      const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+      this.cine = { cx: this.px + fx * 3.6 - fz * 1.8, cz: this.pz + fz * 3.6 + fx * 1.8, h: 2.1, lx: this.px, lz: this.pz, t: 0 };
+    }
+  }
+
+  /** Quien habla gesticula un poco */
+  speak(who: string) {
+    for (const a of [...this.sceneCast, ...this.storyCast]) if (a.id === who) a.talk = 1.6;
+  }
+
+  endScene() {
+    this.sceneCast.forEach((a) => this.dropActor(a)); this.sceneCast = [];
+    if (this.cine) { this.camYaw = this.yaw + Math.PI; this.cine = null; }
+  }
+  get inScene() { return !!this.cine; }
+
+  private syncT = 0;
+  private updateActors(dt: number) {
+    this.syncT -= dt;
+    if (this.syncT <= 0) { this.syncT = 0.5; this.syncStoryCast(); }
+    for (const a of [...this.storyCast, ...this.sceneCast]) {
+      const dx = this.px - a.x, dz = this.pz - a.z, d = Math.hypot(dx, dz);
+      if (d < 10) { const ty = Math.atan2(dx, dz); let df = ty - a.yaw; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; a.yaw += df * (1 - Math.exp(-5 * dt)); }
+      a.talk = Math.max(0, a.talk - dt);
+      const base = this.idlePose(this.time, a.phase);
+      const target = a.talk > 0 ? mk({ ...TALK, lF: [-1.2 - Math.sin(this.time * 9) * 0.35, 0, 0] }, base) : base;
+      a.pose = blendPose(a.pose, target, 1 - Math.exp(-8 * dt), a.pose);
+      a.model.root.rotation.y = a.yaw;
+      a.model.applyPose(a.pose, this.time);
+      a.tag.visible = !this.cine;
+    }
+  }
+
   // ------------------------------------------------------------------ cámara
   private updateCamera(dt: number) {
+    if (this.cine) {
+      const c = this.cine; c.t += dt;
+      // pequeño travelling lateral para que el plano respire
+      const drift = Math.sin(c.t * 0.25) * 0.35;
+      const dx = c.cx - c.lx, dz = c.cz - c.lz, L = Math.hypot(dx, dz) || 1;
+      const want = new THREE.Vector3(c.cx - (dz / L) * drift, c.h, c.cz + (dx / L) * drift);
+      for (let i = 0; i < 10 && this.layout.blocked(want.x, want.z, 0.3); i++) { want.x = lerp(want.x, c.lx, 0.15); want.z = lerp(want.z, c.lz, 0.15); }
+      this.camPos.lerp(want, 1 - Math.exp(-(c.t < 0.05 ? 60 : 4) * dt));
+      this.stage.camera.position.copy(this.camPos);
+      this.stage.camera.lookAt(c.lx, 1.5, c.lz);
+      return;
+    }
     const cy = this.camYaw, cp = this.camPitch, dist = this.camDist;
     const tx = this.px, ty = 1.5, tz = this.pz;
     const want = new THREE.Vector3(tx + Math.sin(cy) * Math.cos(cp) * dist, ty + Math.sin(cp) * dist, tz + Math.cos(cy) * Math.cos(cp) * dist);
@@ -476,7 +863,6 @@ export class WorldView {
     this.stage.camera.position.copy(this.camPos); this.stage.camera.lookAt(this.px, 1.5, this.pz);
   }
   rotateCamera(dyaw: number, dpitch = 0) { this.camYaw += dyaw; this.camPitch = clamp(this.camPitch + dpitch, 0.12, 1.1); }
-  zoom(d: number) { this.camDist = clamp(this.camDist + d, 4, 13); }
 
   // ------------------------------------------------------------------ objetivos de interacción
   /** Todos los objetivos visibles ahora mismo */
@@ -492,7 +878,7 @@ export class WorldView {
     let best: Target | null = null, bd = 1e9;
     for (const t of this.allTargets()) {
       const d = Math.hypot(t.x - this.px, t.z - this.pz);
-      const reach = t.kind === 'npc' ? 2.6 : t.kind === 'poi' ? Math.max(2.4, (t.def.radius ?? 1) + 1.6) : 2.6;
+      const reach = t.kind === 'npc' ? 2.6 : t.kind === 'poi' ? Math.max(t.def.kind === 'story' ? 3.2 : 2.4, (t.def.radius ?? 1) + 1.6) : 2.6;
       if (d < reach && d < bd) { best = t; bd = d; }
     }
     this.promptTarget = best;
@@ -516,6 +902,10 @@ export class WorldView {
     });
     this.playerModel.dispose();
     for (const n of this.npcs) n.model.dispose();
+    for (const a of [...this.storyCast, ...this.sceneCast]) a.model.dispose();
+    this.storyCast = []; this.sceneCast = [];
+    if (this.sparring) { this.sparring.a.dispose(); this.sparring.b.dispose(); }
+    this.life.dispose();
     for (const d of this.disposables) { try { d.dispose(); } catch { /* ya liberado */ } }
   }
 }

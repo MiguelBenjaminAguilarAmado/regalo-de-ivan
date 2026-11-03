@@ -50,7 +50,7 @@ export const NPCS: NpcDef[] = [
   },
   {
     id: 'taxista', district: 'plaza', at: [16, -8], yaw: -Math.PI / 2,
-    talks: [talk({ notFlag: 'taxista_hola' }, 'taxista', L('taxista', 'Taxi del Hoyo City. Te llevo a donde quieras: a la playa, a las 3000, a donde Pablo me pague. Veinte Hoyos el viaje.'))],
+    talks: [talk({ notFlag: 'taxista_hola' }, 'taxista', L('taxista', 'Taxi de Hoyo. Te llevo a donde quieras: a la playa, a las 3000, a donde Pablo me pague. Veinte Hoyos el viaje.'))],
     quips: ['Hoy he visto a Elso en la playa mirando el mar con cara de telenovela.', 'Para ir a Santiago hay que haber hecho antes cosas en la historia. Yo solo conduzco.', 'Si hay un apagón, mejor quédate dentro del taxi.'],
   },
   {

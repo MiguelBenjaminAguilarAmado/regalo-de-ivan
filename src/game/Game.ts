@@ -28,7 +28,7 @@ import { simulateMatch } from '../modes/simulate';
 import type { Quality } from '../arenas/Arena';
 
 /** Capítulo de la historia en curso */
-export interface StoryRun { chapter: StoryChapter; fights: StoryFight[]; fi: number; hp: number | null; hpBefore: number | null; partner?: string }
+export interface StoryRun { chapter: StoryChapter; fights: StoryFight[]; fi: number; hp: number | null; hpBefore: number | null; partner?: string; skipFirstBefore?: boolean }
 
 /** Una racha del modo Supervivencia */
 export interface SurvivalRun { player: string; skin?: string; wins: number; hp: number; perks: string[]; used: string[]; opp: string }
@@ -65,7 +65,7 @@ export class Game {
   lastVersus: VersusSetup | null = null;
   mode: 'versus' | 'torneo' | 'espectador' | 'supervivencia' | 'historia' | 'mundo' = 'versus';
   story: StoryRun | null = null;
-  /** Mundo abierto (El Hoyo City) */
+  /** Mundo abierto (la ciudad de Hoyo) */
   world: WorldController;
   /** Si el capítulo en curso se empezó desde el mundo abierto, al acabar se vuelve a él */
   storyReturn: 'mundo' | null = null;
@@ -205,16 +205,58 @@ export class Game {
   private saveStory(p: ReturnType<Game['storyProgress']>) { this.save.story = p; writeSave(this.save); }
 
   /** Empieza (o repite) un capítulo: escenas de introducción → combates → escenas finales */
-  startChapter(id: string, opts: { returnTo?: 'mundo' } = {}) {
+  startChapter(id: string, _opts: { returnTo?: 'mundo' } = {}) {
     const ch = CHAPTERS.find((c) => c.id === id);
     if (!ch) return;
-    this.storyReturn = opts.returnTo ?? null;
+    // la historia vive en Hoyo: al acabar (o al salir) siempre se vuelve a la ciudad
+    this.storyReturn = 'mundo';
     this.mode = 'historia';
     this.tour = null; this.surv = null;
     const flags = () => this.storyProgress().flags;
     this.story = { chapter: ch, fights: fightsFor(ch, flags()), fi: 0, hp: null, hpBefore: null };
     Audio.music('menu');
     this.screens.showStoryScenes(scenesFor(ch.intro, flags()), flags, (c) => this.saveStory(applyChoice(this.storyProgress(), c)), () => this.storyFight());
+  }
+
+  /** Combates de un capítulo cuya introducción ya se ha visto en la calle (WorldController.startChapter) */
+  startChapterFights(id: string) {
+    const ch = CHAPTERS.find((c) => c.id === id);
+    if (!ch) return;
+    this.storyReturn = 'mundo';
+    this.mode = 'historia';
+    this.tour = null; this.surv = null;
+    this.story = { chapter: ch, fights: fightsFor(ch, this.storyProgress().flags), fi: 0, hp: null, hpBefore: null, skipFirstBefore: true };
+    if (!this.showcase) this.openShowcase(ch.arena);
+    this.storyFight();
+  }
+
+  /** Marca un capítulo como completado (banderas, logros); devuelve el texto de la recompensa si es la primera vez */
+  completeStoryChapter(ch: StoryChapter): string | null {
+    const first = !this.storyProgress().done.includes(ch.id);
+    const p = completeChapter(this.storyProgress(), ch);
+    this.save.story = p;
+    let rewardText: string | null = null;
+    if (first && ch.rewards) {
+      for (const a of ch.rewards.achievements ?? []) if (!this.save.achievements[a]) this.save.achievements[a] = Date.now();
+      rewardText = ch.rewards.text;
+    }
+    writeSave(this.save);
+    return rewardText;
+  }
+
+  /** Tras ver el final en la calle: lo guarda y enseña la pantalla de FIN; luego, de vuelta a Hoyo */
+  finishEnding(endId: string) {
+    const ending = ENDINGS.find((e) => e.id === endId) ?? ENDINGS[0];
+    const cur = this.storyProgress();
+    const isNew = !cur.endings.includes(ending.id);
+    const next = { ...cur, endings: isNew ? [...cur.endings, ending.id] : cur.endings };
+    this.save.story = next;
+    for (const a of ['historia', 'final_' + ending.id]) if (!this.save.achievements[a]) this.save.achievements[a] = Date.now();
+    writeSave(this.save);
+    this.mode = 'historia';
+    if (!this.showcase) this.openShowcase('ascensor');
+    Audio.music('menu');
+    this.screens.showStoryTheEnd(ending, isNew, next.endings.length, ENDINGS.length, () => this.world.enter({ then: () => this.world.afterChapter('final') }));
   }
 
   /** Datos de Chema con su traje elegido */
@@ -236,7 +278,8 @@ export class Game {
       this.screens.showVS(opts.p, opts.c, opts.arena, opts.difficulty, () => this.startBattle(opts), false, opts.pPartner, opts.cPartner, opts.label);
     };
     const flags = () => this.storyProgress().flags;
-    const before = scenesFor(fight.before ?? [], flags());
+    const skip = run.fi === 0 && run.skipFirstBefore;
+    const before = skip ? [] : scenesFor(fight.before ?? [], flags());
     if (before.length) this.screens.showStoryScenes(before, flags, (c) => this.saveStory(applyChoice(this.storyProgress(), c)), go); else go();
   }
 
@@ -263,7 +306,7 @@ export class Game {
     if (!won) {
       this.screens.showResults(info, [
         { label: 'Reintentar combate', primary: true, action: () => { run.hp = run.hpBefore; this.storyFight(); } },
-        { label: this.storyReturn ? 'Volver al mundo' : 'Salir a la historia', action: () => { this.story = null; this.afterStory(); } },
+        { label: 'Volver a Hoyo', action: () => { this.story = null; this.afterStory(); } },
       ]);
       return;
     }
@@ -286,8 +329,8 @@ export class Game {
     this.goMenu(); this.screens.showStoryMenu();
   }
 
-  /** Entra en el mundo abierto */
-  enterWorld() { this.world.enter(); }
+  /** Entra en Hoyo (la ciudad donde vive la historia). Con `chapter`, te lleva a su marca y lo empieza. */
+  enterWorld(opts: { chapter?: string } = {}) { this.world.enter(opts); }
 
   /** Final de la historia: escenas del final conseguido, logros y pantalla de FIN */
   private playEnding(_reward: string | null) {
@@ -309,6 +352,13 @@ export class Game {
   private storyChapterWon() {
     const run = this.story!, ch = run.chapter;
     this.battle?.dispose(); this.battle = null;
+    if (this.storyReturn === 'mundo') {
+      // de vuelta a Hoyo: la escena final del capítulo se ve en la calle
+      this.storyReturn = null;
+      this.story = null;
+      this.world.enter({ then: () => this.world.chapterOutro(ch) });
+      return;
+    }
     if (!this.showcase) this.openShowcase(ch.arena);
     const flags = () => this.storyProgress().flags;
     this.screens.showStoryScenes(scenesFor(ch.outro, flags()), flags, (c) => this.saveStory(applyChoice(this.storyProgress(), c)), () => {
@@ -483,7 +533,7 @@ export class Game {
       won, winner, loser, reasonText, time: s.time,
       damage: { dealt: s.damageTaken[1], taken: s.damageTaken[0] },
       quotes,
-      newAchievements: [...got.map((id) => ACHIEVEMENTS.find((a) => a.id === id)!).filter(Boolean), ...(worldPrize ? [{ name: 'Premio del Hoyo City', desc: worldPrize }] : [])],
+      newAchievements: [...got.map((id) => ACHIEVEMENTS.find((a) => a.id === id)!).filter(Boolean), ...(worldPrize ? [{ name: 'Premio de Hoyo', desc: worldPrize }] : [])],
       unlocked,
     };
     if (got.length || unlocked.length) Audio.sfx('unlock');
@@ -497,7 +547,7 @@ export class Game {
       const back = () => { this.battle?.dispose(); this.battle = null; this.world.enter(); this.world.flushEvents(); };
       const buttons: { label: string; primary?: boolean; action: () => void }[] = [];
       if (this.world.towerActive && won && this.world.fight) buttons.push({ label: 'Siguiente piso', primary: true, action: () => this.world.continueTower() });
-      buttons.push({ label: 'Volver al mundo', primary: buttons.length === 0, action: back });
+      buttons.push({ label: 'Volver a Hoyo', primary: buttons.length === 0, action: back });
       this.screens.showResults(info, buttons);
       return;
     }

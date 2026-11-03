@@ -2,18 +2,20 @@ import type { CameraRig } from '../render/CameraRig';
 import type { Game } from '../game/Game';
 import type { BattleOpts } from '../game/Battle';
 import type { Appearance, FighterData } from '../combat/types';
-import { CHAPTERS } from '../../content/historia';
+import { CHAPTERS, ENDINGS } from '../../content/historia';
+import { CHATTER, CITY_BEATS, PROLOGUE } from '../../content/historia-ciudad';
 import { CIVILS, DISTRICTS, GRAFFITI, ITEMS, POIS, SPAWN, STICKERS } from '../../content/mundo';
 import { NPCS } from '../../content/mundo-npc';
 import { QUESTS, QUEST_BY_ID } from '../../content/misiones';
 import { ARENA_INFO } from '../combat/arenaInfo';
 import { fighterById, ROSTER } from '../content/roster';
 import { Audio } from '../audio/Audio';
+import { makeAvatar } from '../content/avatar';
 import { el, clear } from '../ui/dom';
 import { WorldUI, type MapData } from '../ui/WorldUI';
 import { WorldView, type Target, type WorldBridge } from './WorldView';
 import { MINI_INFO, runMinigame, type MiniId } from './minigames';
-import { chapterState, newProgress, type Flags, type StoryChoice, type StoryProgress, type StoryScene } from '../modes/Story';
+import { applyChoice, chapterState, fightsFor, lineVisible, newProgress, nextChapter, scenesFor, type Flags, type StoryChapter, type StoryChoice, type StoryProgress, type StoryScene } from '../modes/Story';
 import { scaleOpponent } from '../modes/Survival';
 import { simulateMatch } from '../modes/simulate';
 import {
@@ -50,6 +52,14 @@ export class WorldController {
 
   constructor(private g: Game, uiRoot: HTMLElement) {
     this.ui = new WorldUI(uiRoot);
+    const can = () => this.active && (!this.busy || this.ui.modalOpen);
+    this.ui.handlers = {
+      map: () => { if (can()) this.toggle(() => this.mapPanel()); },
+      quests: () => { if (can()) this.toggle(() => this.questsPanel()); },
+      bag: () => { if (can()) this.toggle(() => this.inventoryPanel()); },
+      pause: () => this.pauseMenu(),
+      act: () => { if (this.active && !this.busy && this.view?.target) this.interact(this.view.target); },
+    };
   }
 
   // ------------------------------------------------------------------ estado
@@ -77,7 +87,22 @@ export class WorldController {
     npcLook: (id) => this.npcLook(id),
     npcName: (id) => NPC_MAP.get(id)?.fighter ? fighterById(id).name : CIVIL_MAP.get(id)?.name ?? id,
     hour: () => hourOf(this.progress),
+    storyActors: () => {
+      const ch = this.pendingChapter();
+      if (!ch) return null;
+      const poi = POIS.find((p) => p.kind === 'story' && p.chapter === ch.id);
+      if (!poi || !this.bridge.isOpen(poi.district)) return null;
+      const ids = (CITY_BEATS[ch.id]?.cast ?? ch.intro[0]?.cast ?? []).filter((id) => id !== 'chema').slice(0, 2);
+      return ids.length ? { poi: poi.id, ids } : null;
+    },
+    chatter: () => {
+      const ok = CHATTER.filter((c) => condHolds(c.cond, this.ctx()));
+      return ok[Math.floor(Math.random() * ok.length)]?.text ?? '¡Hoyo, Hoyo!';
+    },
   };
+
+  /** Capítulo de la historia que toca ahora (null = historia terminada) */
+  pendingChapter(): StoryChapter | null { return nextChapter(CHAPTERS, this.story); }
 
   private poiVisible(p: PoiDef): boolean {
     if (!condHolds(p.cond, this.ctx())) return false;
@@ -101,7 +126,8 @@ export class WorldController {
     const c = CIVIL_MAP.get(id);
     if (!c) return null;
     const base = ROSTER.find((r) => r.id === 'novato')!;
-    return { ...base, id: c.id, name: c.name, appearance: c.appearance, description: c.blurb, portrait: null, pfp: null };
+    const face = makeAvatar(c.appearance, 'civ-' + c.id);
+    return { ...base, id: c.id, name: c.name, appearance: c.appearance, description: c.blurb, portrait: face, pfp: face };
   }
 
   private markerFor(id: string): '!' | '?' | null {
@@ -115,7 +141,7 @@ export class WorldController {
   }
 
   // ------------------------------------------------------------------ entrar y salir
-  enter(opts: { spawn?: { x: number; z: number; yaw: number } } = {}) {
+  enter(opts: { spawn?: { x: number; z: number; yaw: number }; chapter?: string; then?: () => void } = {}) {
     const g = this.g;
     this.progress = migrateWorld(g.save.world);
     g.save.world = this.progress;
@@ -135,15 +161,30 @@ export class WorldController {
     g.touch.show(g.useTouch); g.touch.setTag(false);
     document.body.classList.toggle('touch-mode', g.useTouch);
     this.attachInput();
+    document.body.classList.add('in-world');
+    if (opts.chapter) {
+      const poi = POIS.find((p) => p.kind === 'story' && p.chapter === opts.chapter);
+      const s = poi && this.view.layout.spots['poi:' + poi.id];
+      if (s) this.view.teleport(s.x, s.z + 3.2, Math.PI);
+    }
     this.view.onDistrict?.(this.view.district);
+    const go = () => { if (opts.then) opts.then(); else if (opts.chapter) this.startChapter(opts.chapter); };
     if (!this.progress.flags.world_intro) {
       this.progress.flags.world_intro = true;
-      this.playScenes([{ lines: [
-        { who: 'narrador', text: 'El Hoyo City: ocho barrios, un estadio, una torre y mucha gente con ganas de pelea. Aquí empieza todo… y aquí puede acabar.' },
-        { who: 'narrador', text: 'Muévete con WASD (Shift para correr). Pulsa E junto a una persona o un lugar para interactuar. M abre el mapa, I el inventario, Q las misiones y Esc la pausa.' },
-        { who: 'narrador', text: 'Los círculos dorados con una estrella son capítulos de la HISTORIA. Los azules, tiendas y servicios; los verdes, minijuegos. Las pegatinas amarillas flotan en cualquier rincón.' },
-      ] }], () => undefined);
+      if (!this.story.done.length && !opts.chapter && !opts.then) {
+        this.playScenes(PROLOGUE, () => { this.showGoal(); go(); });
+        return;
+      }
     }
+    go();
+  }
+
+  /** Recuerda el objetivo de la historia con un aviso */
+  showGoal() {
+    const ch = this.pendingChapter();
+    if (!ch) return;
+    const n = CHAPTERS.findIndex((c) => c.id === ch.id) + 1;
+    this.ui.toast(`★ Capítulo ${n} · ${ch.title}: ${CITY_BEATS[ch.id]?.goal ?? 'sigue la estrella dorada'}`, 'gold');
   }
 
   /** Sale del mundo (para combatir, empezar un capítulo o volver al menú) */
@@ -156,7 +197,7 @@ export class WorldController {
     this.active = false;
     this.g.input.enabled = false;
     this.g.touch.show(false);
-    document.body.classList.remove('touch-mode');
+    document.body.classList.remove('touch-mode', 'in-world');
     this.persist();
   }
 
@@ -167,9 +208,8 @@ export class WorldController {
     const down = (e: PointerEvent) => { if (!this.active || this.busy || (e.target as HTMLElement | null)?.closest?.('.touch-ui, .world-ui button, .wmodal')) return; if (e.button === 0 || e.pointerType === 'touch') { if (e.pointerType === 'touch' && e.clientX < window.innerWidth * 0.45) return; this.drag = { id: e.pointerId, x: e.clientX, y: e.clientY }; } };
     const move = (e: PointerEvent) => { if (!this.drag || e.pointerId !== this.drag.id || !this.view) return; this.view.rotateCamera(-(e.clientX - this.drag.x) * 0.006, (e.clientY - this.drag.y) * 0.004); this.drag.x = e.clientX; this.drag.y = e.clientY; };
     const up = (e: PointerEvent) => { if (this.drag && e.pointerId === this.drag.id) this.drag = null; };
-    const wheel = (e: WheelEvent) => { if (this.active && !this.busy) this.view?.zoom(e.deltaY * 0.01); };
-    window.addEventListener('pointerdown', down); window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up); window.addEventListener('wheel', wheel, { passive: true });
-    this.pointerHandlers = [() => window.removeEventListener('pointerdown', down), () => window.removeEventListener('pointermove', move), () => window.removeEventListener('pointerup', up), () => window.removeEventListener('pointercancel', up), () => window.removeEventListener('wheel', wheel)];
+    window.addEventListener('pointerdown', down); window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+    this.pointerHandlers = [() => window.removeEventListener('pointerdown', down), () => window.removeEventListener('pointermove', move), () => window.removeEventListener('pointerup', up), () => window.removeEventListener('pointercancel', up)];
     this.keyHandler = (e) => {
       if (!this.active) return;
       if (e.code === 'Comma') this.view?.rotateCamera(0.18);
@@ -224,6 +264,17 @@ export class WorldController {
       clock: clockText(p), day: dayOf(p), night: isNight(p), district: d?.name ?? 'Calles del Hoyo',
       quest: aq ? { title: aq.title, step: aq.steps[p.quests[aq.id].step]?.text ?? '' } : null,
     });
+    // objetivo de la historia con flecha
+    const ch = this.pendingChapter();
+    const view = this.view;
+    const poi = ch ? POIS.find((x) => x.kind === 'story' && x.chapter === ch.id) : null;
+    const spot = poi && view ? view.layout.spots['poi:' + poi.id] : null;
+    if (ch && spot && view) {
+      const dx = spot.x - view.px, dz = spot.z - view.pz, cy = view.camYaw;
+      const r = dx * Math.cos(cy) - dz * Math.sin(cy), f = -dx * Math.sin(cy) - dz * Math.cos(cy);
+      const n = CHAPTERS.findIndex((c) => c.id === ch.id) + 1;
+      this.ui.setObjective({ title: `HISTORIA · CAPÍTULO ${n}: ${ch.title.toUpperCase()}`, text: CITY_BEATS[ch.id]?.goal ?? 'Sigue la estrella dorada', angle: Math.atan2(r, f), dist: Math.hypot(dx, dz) });
+    } else this.ui.setObjective(ch ? null : { title: 'HISTORIA COMPLETADA', text: 'Hoyo es tuyo: misiones, Torre Motos, cartas y pegatinas', angle: null, dist: 0 });
   }
 
   private mapData(mini = false): MapData {
@@ -240,13 +291,15 @@ export class WorldController {
       const spot = this.bridge.npcSpot(n);
       if (!spot) continue;
       const mk = this.markerFor(n.id);
-      if (!mk) continue;
+      if (!mk && !n.fighter) continue;
+      if (!this.bridge.isOpen(spot.district)) continue;
       const key = spot.district === n.district && spot.at[0] === n.at[0] ? 'npc:' + n.id : 'npcalt:' + n.id;
       const s = view.layout.spots[key];
-      if (s) markers.push({ x: s.x, z: s.z, kind: 'quest', label: this.bridge.npcName(n.id) });
+      if (s) markers.push({ x: s.x, z: s.z, kind: mk ? 'quest' : 'npc', label: this.bridge.npcName(n.id) });
     }
     return {
       worldSize: 126,
+      roads: view.layout.roads,
       districts: DISTRICTS.map((d) => ({ id: d.id, name: d.name, cx: d.center[0], cz: d.center[1], w: d.size[0], d: d.size[1], open: this.bridge.isOpen(d.id), color: '#' + d.ground.toString(16).padStart(6, '0') })),
       player: { x: view.px, z: view.pz, yaw: view.yaw },
       markers,
@@ -271,15 +324,42 @@ export class WorldController {
   }
 
   // ------------------------------------------------------------------ escenas y misiones
-  playScenes(scenes: StoryScene[], done: () => void) {
-    if (!scenes.length) { done(); return; }
+  /**
+   * Reproduce escenas EN LA CALLE: los que hablan aparecen delante de Chema y la cámara pasa a modo cine.
+   * Con `story: true`, las elecciones cambian las banderas de la historia (y no las del mundo).
+   */
+  playScenes(scenes: StoryScene[], done: () => void, opts: { story?: boolean } = {}) {
+    const list = [...scenes];
+    if (!list.length) { done(); return; }
     this.busy = true;
     this.ui.closeModal();
-    this.g.screens.showStoryScenes(scenes, () => this.flags(), (c: StoryChoice) => { if (c.set) this.progress.flags = { ...this.progress.flags, ...c.set }; }, () => {
+    this.ui.setCinema(true);
+    const flags = () => this.flags();
+    const onChoice = (c: StoryChoice) => {
+      if (opts.story) { this.g.save.story = applyChoice(this.story, c); this.persist(); }
+      else if (c.set) this.progress.flags = { ...this.progress.flags, ...c.set };
+    };
+    const finish = () => {
+      this.view?.endScene();
+      this.ui.setCinema(false);
       this.g.screens.clear();
       this.busy = false;
       done();
-    });
+    };
+    const next = () => {
+      const sc = list.shift();
+      if (!sc) { finish(); return; }
+      if (!scenesFor([sc], flags()).length) { next(); return; }
+      this.view?.beginScene(this.sceneCast(sc));
+      this.g.screens.showStoryScenes([sc], flags, onChoice, next, (who) => this.view?.speak(who));
+    };
+    next();
+  }
+
+  /** Quién sale físicamente en una escena (no Chema, ni el narrador, ni el árbitro) */
+  private sceneCast(sc: StoryScene): string[] {
+    const ids = sc.cast ?? [...new Set(sc.lines.filter((l) => lineVisible(l, this.flags())).map((l) => l.who))];
+    return ids.filter((id) => id !== 'chema' && id !== 'narrador' && id !== 'arbitro' && !!this.npcLook(id)).slice(0, 3);
   }
 
   /** Informa de un evento a las misiones; muestra pasos y recompensas */
@@ -327,8 +407,8 @@ export class WorldController {
   }
 
   // ------------------------------------------------------------------ interacción
-  interact(t: Target) {
-    if (this.busy) return;
+  interact(t: Target | null) {
+    if (this.busy || !t) return;
     if (t.kind === 'npc') this.talkMenu(t.def);
     else if (t.kind === 'graffiti') this.photo(t.id);
     else if (t.kind === 'poi') this.usePoi(t.def);
@@ -390,8 +470,23 @@ export class WorldController {
       case 'heal': this.restAt(p); break;
       case 'photo': this.photoSpot(p); break;
       case 'fountain': this.fountain(p); break;
+      case 'landmark': if (p.id === 'ring_calle') { this.ringShow(); break; } this.report({ t: 'visit', id: p.id }); this.ui.toast(p.name + ': ' + p.prompt, 'info'); break;
       default: this.report({ t: 'visit', id: p.id }); this.ui.toast(p.name + ': ' + p.prompt, 'info');
     }
+  }
+
+  /** El ring callejero de la plaza: combate de exhibición con comentarios del árbitro jubilado */
+  private ringShow() {
+    this.report({ t: 'visit', id: 'ring_calle' });
+    const lines = [
+      '¡Gancho del Novato! El Veterano ni se inmuta: lleva cuarenta años encajando golpes y facturas.',
+      'Esto es una exhibición, chaval. Aquí nadie gana, pero todo el mundo aplaude. Como en las bodas.',
+      'El Veterano dice que de joven tumbó a Pablo Motos. Pablo dice que fue al revés. Los dos mienten.',
+      'Si quieres pelear de verdad, reta a los luchadores que andan por la calle. Ya verás qué rápido se les quitan las ganas.',
+    ];
+    const first = !this.progress.flags.ring_visto;
+    this.progress.flags.ring_visto = true;
+    this.playScenes([{ cast: ['arbitro_civ'], lines: [{ who: 'arbitro_civ', text: lines[Math.floor(Math.random() * lines.length)] }] }], () => { if (first) { this.gainXp(10); this.ui.toast('Has visto tu primer combate de exhibición (+10 XP)', 'good'); } });
   }
 
   private fountain(p: PoiDef) {
@@ -471,7 +566,7 @@ export class WorldController {
     this.fight = { npc: npc.id, first };
     const arena = this.arenaFor();
     const d = this.view?.district ? DIST_MAP.get(this.view.district) : null;
-    const opts: BattleOpts = { p, c, arena, difficulty: diff, startMom, objective: `Gana el combate callejero contra ${c.name}`, label: `COMBATE CALLEJERO · ${(d?.name ?? 'EL HOYO CITY').toUpperCase()}` };
+    const opts: BattleOpts = { p, c, arena, difficulty: diff, startMom, objective: `Gana el combate callejero contra ${c.name}`, label: `COMBATE CALLEJERO · ${(d?.name ?? 'HOYO').toUpperCase()}` };
     this.launch(opts);
   }
 
@@ -562,14 +657,47 @@ export class WorldController {
   continueTower() { if (this.towerRun) this.towerFight(); }
 
   // ------------------------------------------------------------------ historia
+  /**
+   * Empieza un capítulo EN LA CALLE: escena de llegada, introducción y la previa del primer combate se ven en Hoyo,
+   * con los personajes delante de ti. Después se sale al combate y, al ganar, se vuelve aquí (chapterOutro).
+   */
   startChapter(id: string) {
     const st = chapterState(CHAPTERS, this.story, id);
-    const ch = CHAPTERS.find((c) => c.id === id)!;
-    if (st !== 'open') { this.ui.toast('Ese capítulo aún no está disponible.', 'bad'); return; }
-    this.open(`Historia: ${ch.title}`, [el('p', {}, ch.summary), el('div', { class: 'btns' }, [
-      el('button', { class: 'btn primary go', 'data-nav': true, onClick: () => { this.ui.closeModal(); this.leave(true); this.g.startChapter(id, { returnTo: 'mundo' }); } }, [el('span', {}, 'Empezar capítulo')]),
-      el('button', { class: 'btn', onClick: () => this.ui.closeModal() }, [el('span', {}, 'Ahora no')]),
-    ])]);
+    const ch = CHAPTERS.find((c) => c.id === id);
+    if (!ch || st !== 'open') { this.ui.toast('Ese capítulo aún no está disponible.', 'bad'); return; }
+    const n = CHAPTERS.findIndex((c) => c.id === id) + 1;
+    this.ui.chapterCard(`CAPÍTULO ${n}`, ch.title, ch.summary);
+    Audio.sfx('ready');
+    const beat = CITY_BEATS[id];
+    this.playScenes([...(beat?.arrive ?? []), ...ch.intro], () => {
+      const first = fightsFor(ch, this.story.flags)[0];
+      this.playScenes(first?.before ?? [], () => {
+        this.leave(true);
+        this.g.startChapterFights(id);
+      }, { story: true });
+    }, { story: true });
+  }
+
+  /** Vuelta a Hoyo tras ganar los combates de un capítulo: escena final en la calle, recompensa y lo que viene después */
+  chapterOutro(ch: StoryChapter) {
+    const replay = this.story.done.includes(ch.id);
+    this.playScenes(ch.outro, () => {
+      const reward = this.g.completeStoryChapter(ch);
+      if (ch.endsStory && !replay) { this.playEnding(); return; }
+      const n = CHAPTERS.findIndex((c) => c.id === ch.id) + 1;
+      this.ui.chapterCard('CAPÍTULO COMPLETADO', `${n}. ${ch.title}`, reward ?? '¡La ciudad entera habla de ti!');
+      Audio.sfx('win');
+      this.view?.refresh();
+      const after = replay ? [] : CITY_BEATS[ch.id]?.after ?? [];
+      this.playScenes(after, () => { this.afterChapter(ch.id); this.showGoal(); }, { story: true });
+    }, { story: true });
+  }
+
+  /** Final de la temporada: se ve en la calle y luego la pantalla de FIN */
+  private playEnding() {
+    const endId = String(this.story.flags.final ?? 'leal');
+    const ending = ENDINGS.find((e) => e.id === endId) ?? ENDINGS[0];
+    this.playScenes(ending.scenes, () => { this.leave(true); this.g.finishEnding(ending.id); }, { story: true });
   }
 
   /** Al volver de un capítulo: refresca los distritos y avisa de lo desbloqueado */
@@ -666,7 +794,7 @@ export class WorldController {
         this.ui.toast(`Taxi a ${d.name}.`, 'info');
       }, !open || here);
     });
-    this.open('Taxi del Hoyo City', [el('p', {}, 'Veinte Hoyos el viaje, treinta minutos de mundo.'), el('div', { class: 'wlist' }, rows)], true);
+    this.open('Taxi de Hoyo', [el('p', {}, 'Veinte Hoyos el viaje, treinta minutos de mundo.'), el('div', { class: 'wlist' }, rows)], true);
   }
 
   private boardPanel() {
@@ -733,12 +861,17 @@ export class WorldController {
   private mapPanel() {
     const cv = document.createElement('canvas'); cv.width = 520; cv.height = 520; cv.className = 'wmap-big';
     if (this.view) this.ui.paintMap(cv, this.mapData(false), 520, 0);
-    this.open('Mapa del Hoyo City', [cv, el('p', { class: 'dim' }, '★ dorado = capítulo de historia · azul = alguien tiene una misión · gris = lugares. Los distritos cerrados se abren avanzando en la historia.')]);
+    const ch = this.pendingChapter();
+    this.open('Mapa de Hoyo', [
+      ch ? el('p', { class: 'wmap-goal' }, `★ Siguiente capítulo: ${ch.title} — ${CITY_BEATS[ch.id]?.goal ?? ''}`) : null,
+      cv,
+      el('p', { class: 'dim' }, '★ dorado = capítulo de la historia · naranja = luchadores (puedes retarlos) · azul = alguien tiene una misión · gris = lugares. Los barrios con candado se abren avanzando en la historia.'),
+    ]);
   }
 
   statsPanel() {
     const w = this.progress, s = w.stats;
-    this.open('Estadísticas del Hoyo City', [el('div', { class: 'hstats' }, [
+    this.open('Estadísticas de Hoyo', [el('div', { class: 'hstats' }, [
       ['Nivel', String(w.level)], ['Combates callejeros', `${s.wins}/${s.fights}`], ['Misiones', `${doneQuests(w)}/${QUESTS.length}`], ['Pegatinas', `${w.collected.length}/${STICKERS.length}`],
       ['Cartas', `${w.cards.length}/14`], ['Hoyos ganados', String(s.money)], ['Apuestas ganadas', `${s.betsWon}/${s.bets}`], ['Peces', String(s.fish)], ['Mejor piso de la Torre', `${w.tower}/10`], ['Días', String(dayOf(w))],
     ].map(([k, v]) => el('div', { class: 'hstat' }, [el('b', {}, v), el('span', {}, k)])))]);
@@ -752,13 +885,14 @@ export class WorldController {
       ['Misiones (Q)', 'Diario de misiones', () => { this.ui.closeModal(); this.questsPanel(); }],
       ['Inventario (I)', 'Equipo, consumables y traje', () => { this.ui.closeModal(); this.inventoryPanel(); }],
       ['Mapa (M)', 'Distritos y marcadores', () => { this.ui.closeModal(); this.mapPanel(); }],
-      ['Estadísticas', 'Tu progreso en el Hoyo City', () => { this.ui.closeModal(); this.statsPanel(); }],
+      ['Estadísticas', 'Tu progreso en Hoyo', () => { this.ui.closeModal(); this.statsPanel(); }],
+      ['Capítulos y finales', 'Repite capítulos ya jugados o mira los finales', () => { this.ui.closeModal(); this.leave(true); this.g.goMenu(); this.g.screens.showStoryMenu(); }],
       ['Guardar y salir al menú', 'Vuelves al menú principal; tu progreso se guarda', () => { this.ui.closeModal(); this.exitToMenu(); }],
     ];
     this.open('Pausa', [el('div', { class: 'wlist' }, [
       el('button', { class: 'btn primary go', 'data-nav': true, onClick: () => this.ui.closeModal() }, [el('span', {}, 'Seguir explorando')]),
       ...items.map(([t, s, f]) => el('button', { class: 'btn', 'data-nav': true, onClick: f }, [el('span', {}, t), el('small', {}, s)])),
-    ]), el('p', { class: 'dim' }, 'WASD mover · Shift correr · E interactuar · arrastra con el ratón (o , y .) para girar la cámara · rueda para el zoom')]);
+    ]), el('p', { class: 'dim' }, 'WASD / joystick mover · Shift correr · E / HABLAR interactuar · arrastra (o , y .) para girar la cámara')]);
   }
 
   exitToMenu() { this.leave(true); this.g.goMenu(); }
