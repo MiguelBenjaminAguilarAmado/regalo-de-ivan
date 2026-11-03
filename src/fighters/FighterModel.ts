@@ -54,6 +54,7 @@ export class FighterModel {
   chair: THREE.Group;
   briefcase: THREE.Group;
   mic: THREE.Group;
+  bat: THREE.Group;
   helmet: THREE.Group;
   horn: THREE.Group;
   glow: THREE.Mesh;
@@ -74,10 +75,11 @@ export class FighterModel {
     this.chair = this.makeChair();
     this.briefcase = this.makeBriefcase();
     this.mic = this.makeMic();
+    this.bat = this.makeBat();
     this.helmet = this.makeHelmet();
     this.horn = this.makeHorn();
-    for (const o of [this.chair, this.briefcase, this.mic, this.helmet, this.horn]) o.visible = false;
-    this.rHand.add(this.chair, this.briefcase, this.mic);
+    for (const o of [this.chair, this.briefcase, this.mic, this.bat, this.helmet, this.horn]) o.visible = false;
+    this.rHand.add(this.chair, this.briefcase, this.mic, this.bat);
     this.j.head.add(this.helmet, this.horn);
     // aura para finishers
     this.glow = new THREE.Mesh(
@@ -129,7 +131,7 @@ export class FighterModel {
     const torso = this.j.torso;
     torso.position.set(0, 0.07, 0);
     this.hips.add(torso);
-    const chestMat = ap.outfit === 'camiseta' ? outfitMat : isRef ? std(0xffffff, 0.8) : ap.outfit === 'blazer' ? std(0xf4f4f4, 0.8) : (ap.outfit === 'traje' || ap.outfit === 'abrigo') ? std(0xe9e9ee, 0.7) : skin;
+    const chestMat = ap.outfit === 'camiseta' || ap.outfit === 'sudadera' ? outfitMat : isRef ? std(0xffffff, 0.8) : ap.outfit === 'blazer' ? std(0xf4f4f4, 0.8) : (ap.outfit === 'traje' || ap.outfit === 'abrigo') ? std(0xe9e9ee, 0.7) : skin;
     const chest = this.mesh(torsoGeo(1), chestMat, torso, 0, 0, 0);
     chest.scale.set(1.2 * b, 1, 0.74);
     if (isRef) {
@@ -173,6 +175,34 @@ export class FighterModel {
       skirt.scale.z = 0.8;
     }
 
+    if (ap.outfit === 'sudadera') {
+      // capucha caída por detrás, bolsillo canguro y cordones
+      const hood = this.mesh(new THREE.SphereGeometry(0.13, 14, 10), outfitMat, torso, 0, 0.56, -0.09, true);
+      hood.scale.set(1.25 * b, 0.75, 0.8);
+      const pocket = this.mesh(new THREE.BoxGeometry(0.2 * b, 0.1, 0.02), std(ap.outfitColor, 0.9), torso, 0, 0.1, 0.152);
+      pocket.material = std(new THREE.Color(ap.outfitColor).multiplyScalar(0.88).getHex(), 0.9);
+      for (const sx of [-1, 1]) this.mesh(new THREE.CylinderGeometry(0.007, 0.007, 0.15, 5), std(0xdddddd, 0.7), torso, sx * 0.03, 0.43, 0.152);
+    }
+    if (ap.belt != null) {
+      // cinturón de campeón: correa + placa dorada
+      const strap = this.mesh(new THREE.CylinderGeometry(0.172 * b, 0.172 * b, 0.075, 22), std(ap.belt, 0.55), this.hips, 0, 0.11, 0);
+      strap.scale.z = 0.82;
+      const plate = this.mesh(new THREE.BoxGeometry(0.13, 0.11, 0.025), std(0xd8b43a, 0.25, 0.95), this.hips, 0, 0.11, 0.152 * b);
+      this.mesh(new THREE.BoxGeometry(0.075, 0.065, 0.012), std(0x8a1a1a, 0.4, 0.3), this.hips, 0, 0.11, 0.166 * b);
+      void plate;
+    }
+    if (ap.backpack != null) {
+      const bp = this.mesh(new THREE.BoxGeometry(0.3 * b, 0.4, 0.15), std(ap.backpack, 0.6, 0.3), torso, 0, 0.3, -0.2);
+      for (const sx of [-1, 1]) this.mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.34, 10), std(0xcfd3da, 0.4, 0.5), torso, sx * 0.1, 0.3, -0.31);
+      void bp;
+    }
+    if (ap.bandages != null) {
+      // vendas de momia: aros en torso, brazos y piernas
+      const bm = std(ap.bandages, 0.9);
+      const ring = (parent: THREE.Object3D, y: number, r: number, tilt: number) => { const t = this.mesh(new THREE.TorusGeometry(r, 0.012, 5, 18), bm, parent, 0, y, 0); t.rotation.x = Math.PI / 2 + tilt; return t; };
+      for (const y of [0.08, 0.2, 0.32, 0.44]) { const t = ring(torso, y, 0.185 * b, (y - 0.25) * 0.5); t.scale.set(1.2, 1, 0.8); }
+    }
+
     // ---------- cuello y cabeza
     const head = this.j.head;
     head.position.set(0, 0.58, 0);
@@ -187,7 +217,7 @@ export class FighterModel {
       torso.add(U);
       F.position.set(0, -L_UARM, 0);
       U.add(F);
-      const sleeve = ap.outfit === 'cuero' || isSuit || isRef;
+      const sleeve = ap.outfit === 'cuero' || isSuit || isRef || ap.outfit === 'sudadera';
       const short = ap.outfit === 'camiseta';
       this.limb(U, 0.07 * b, L_UARM, sleeve || short ? outfitMat : skin, 0.066 * b, 0.05 * b, 0.28, 0.15);
       this.mesh(new THREE.SphereGeometry(0.078 * b, 12, 10), sleeve || short ? outfitMat : skin, U, 0, 0.005, 0);
@@ -205,6 +235,11 @@ export class FighterModel {
         const pk = this.mesh(new THREE.TorusGeometry(0.046 * b, 0.009, 6, 14), accentMat, F, 0, -L_FARM + 0.1, 0); pk.rotation.x = Math.PI / 2;
         const pk2 = this.mesh(new THREE.TorusGeometry(0.044 * b, 0.009, 6, 14), accentMat, F, 0, -L_FARM + 0.05, 0); pk2.rotation.x = Math.PI / 2;
       }
+      if (ap.bandages != null) {
+        const bm = std(ap.bandages, 0.9);
+        for (const y of [-0.06, -0.16, -0.24]) { const t = this.mesh(new THREE.TorusGeometry(0.066 * b, 0.011, 5, 14), bm, U, 0, y, 0); t.rotation.x = Math.PI / 2; }
+        for (const y of [-0.05, -0.13, -0.2]) { const t = this.mesh(new THREE.TorusGeometry(0.05 * b, 0.011, 5, 14), bm, F, 0, y, 0); t.rotation.x = Math.PI / 2 + 0.2; }
+      }
       if (ap.outfit === 'cuero') { /* puños */ this.mesh(new THREE.CylinderGeometry(0.047, 0.045, 0.03, 10), outfitMat, F, 0, -L_FARM + 0.02, 0); }
     }
 
@@ -221,6 +256,11 @@ export class FighterModel {
         const tr = this.mesh(new THREE.CylinderGeometry(0.112 * b, 0.12 * b, 0.22, 14), trunksMat, T, 0, -0.1, 0);
         tr.scale.z = 1.0;
         if (ap.outfit !== 'camiseta') this.mesh(new THREE.TorusGeometry(0.118 * b, 0.007, 6, 16), accentMat, T, 0, -0.21, 0).rotation.x = Math.PI / 2;
+      }
+      if (ap.bandages != null) {
+        const bm = std(ap.bandages, 0.9);
+        for (const y of [-0.05, -0.14, -0.23]) { const t = this.mesh(new THREE.TorusGeometry(0.1 * b, 0.012, 5, 14), bm, T, 0, y, 0); t.rotation.x = Math.PI / 2; }
+        for (const y of [-0.06, -0.15, -0.24]) { const t = this.mesh(new THREE.TorusGeometry(0.066 * b, 0.011, 5, 14), bm, S, 0, y, 0); t.rotation.x = Math.PI / 2; }
       }
       // bota
       const boot = this.mesh(new THREE.CapsuleGeometry(0.052 * b, 0.17, 4, 10), bootMat, S, 0, -L_SHIN - 0.0, 0.085);
@@ -246,6 +286,10 @@ export class FighterModel {
     const dark = std(0x120d0b, 0.8);
     if (ap.mask === 'perro') { this.buildDogMask(g, skin); }
     else if (ap.mask === 'caballo') { this.buildHorseMask(g); }
+    else if (ap.mask === 'doge') { this.buildDogeMask(g); }
+    else if (ap.mask === 'bolsa') { this.buildBagMask(g, ap.maskColor ?? 0x141414); }
+    else if (ap.mask === 'alien') { this.buildAlienMask(g); }
+    else if (ap.mask === 'hamburguesa') { this.buildBurgerMask(g); }
     else {
       // ojos
       const eyeWhite = std(0xf6f6f6, 0.25);
@@ -283,12 +327,26 @@ export class FighterModel {
       const must = this.mesh(new THREE.CapsuleGeometry(0.008, 0.07, 4, 8), bm, g, 0, 0.098, 0.113);
       must.rotation.z = Math.PI / 2;
     }
+    if (ap.hairStyle === 'larga' && ap.hair) {
+      const hm = std(ap.hair, 0.9);
+      const back = this.mesh(new THREE.CapsuleGeometry(0.1, 0.2, 6, 12), hm, g, 0, 0.04, -0.07);
+      back.scale.set(1.1, 1, 0.7);
+      for (const sx of [-1, 1]) { const side = this.mesh(new THREE.CapsuleGeometry(0.03, 0.18, 4, 8), hm, g, sx * 0.105, 0.08, -0.01); side.scale.z = 0.8; }
+    }
+    if (ap.hairStyle === 'cresta' && ap.hair) {
+      const cm = std(ap.hair, 0.55, 0, { clearcoat: 0.3 });
+      const crest = this.mesh(new THREE.CylinderGeometry(0.07, 0.115, 0.36, 18), cm, g, 0, 0.36, -0.02);
+      crest.scale.set(1.0, 1.0, 1.2);
+      this.mesh(new THREE.SphereGeometry(0.07, 14, 10), cm, g, 0, 0.54, -0.02).scale.set(1, 0.7, 1.2);
+      for (const sx of [-1, 1]) { const lock = this.mesh(new THREE.CapsuleGeometry(0.035, 0.22, 4, 8), cm, g, sx * 0.115, 0.07, -0.03); lock.scale.z = 0.8; }
+    }
+    if (ap.hat) this.buildHat(g, ap.hat);
     if (ap.glasses) {
       const gm = std(0xc9ccd2, 0.2, 0.9);
       for (const sx of [-1, 1]) {
         const r = this.mesh(new THREE.TorusGeometry(0.034, 0.0035, 6, 20), gm, g, sx * 0.048, 0.155, 0.112, false);
         r.rotation.y = 0;
-        const lens = this.mesh(new THREE.CircleGeometry(0.033, 16), new THREE.MeshPhysicalMaterial({ color: 0xffffff, transparent: true, opacity: 0.12, roughness: 0.05, transmission: 0 }), g, sx * 0.048, 0.155, 0.112, false);
+        const lens = this.mesh(new THREE.CircleGeometry(0.033, 16), new THREE.MeshPhysicalMaterial({ color: ap.glasses === 'sol' ? 0x050505 : 0xffffff, transparent: true, opacity: ap.glasses === 'sol' ? 0.95 : 0.12, roughness: 0.05, transmission: 0 }), g, sx * 0.048, 0.155, 0.112, false);
         const temple = this.mesh(new THREE.CylinderGeometry(0.003, 0.003, 0.11, 4), gm, g, sx * 0.087, 0.155, 0.057, false);
         temple.rotation.x = Math.PI / 2;
       }
@@ -343,6 +401,148 @@ export class FighterModel {
     void skin;
   }
 
+  private buildHat(g: THREE.Group, hat: { kind: 'gorra' | 'sombrero' | 'casco' | 'tricornio' | 'corona'; color: number }) {
+    const m = std(hat.color, 0.8, 0, { sheen: 0.5, sheenColor: new THREE.Color(0x555555) });
+    if (hat.kind === 'corona') {
+      // corona dorada con puntas y gemas
+      const gold = std(hat.color, 0.25, 0.95);
+      const band = this.mesh(new THREE.CylinderGeometry(0.125, 0.135, 0.07, 20, 1, true), gold, g, 0, 0.27, 0.0);
+      (band.material as Mat).side = THREE.DoubleSide;
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; const sp = this.mesh(new THREE.ConeGeometry(0.03, 0.1, 6), gold, g, Math.cos(a) * 0.13, 0.35, Math.sin(a) * 0.13); sp.rotation.z = -Math.cos(a) * 0.12; sp.rotation.x = Math.sin(a) * 0.12; this.mesh(new THREE.SphereGeometry(0.014, 6, 5), std(i % 2 ? 0xc1272d : 0x2a6fe0, 0.2, 0.2), g, Math.cos(a) * 0.13, 0.4, Math.sin(a) * 0.13); }
+      return;
+    }
+    if (hat.kind === 'casco') {
+      // casco de legionario romano: calota metálica, cresta roja y carrilleras
+      const metal = std(hat.color, 0.3, 0.9);
+      const dome = this.mesh(new THREE.SphereGeometry(0.133, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), metal, g, 0, 0.15, -0.004);
+      dome.scale.set(0.98, 1.0, 1.08);
+      const crest = this.mesh(new THREE.BoxGeometry(0.05, 0.1, 0.27), std(0xb3262b, 0.8), g, 0, 0.3, -0.01);
+      crest.scale.y = 1;
+      const brow = this.mesh(new THREE.BoxGeometry(0.26, 0.025, 0.03), metal, g, 0, 0.215, 0.12);
+      void brow;
+      for (const sx of [-1, 1]) this.mesh(new THREE.BoxGeometry(0.03, 0.15, 0.1), metal, g, sx * 0.118, 0.1, 0.03);
+      return;
+    }
+    if (hat.kind === 'tricornio') {
+      // sombrero pirata: copa baja, ala con tres picos, calavera y plumas azules
+      const copa = this.mesh(new THREE.CylinderGeometry(0.105, 0.125, 0.1, 18), m, g, 0, 0.255, 0.0);
+      void copa;
+      this.mesh(new THREE.CylinderGeometry(0.19, 0.19, 0.015, 3), m, g, 0, 0.215, 0.0).rotation.y = Math.PI / 2;
+      for (const [rx, ry] of [[0.2, 0], [-0.17, 2.1], [-0.17, -2.1]] as const) {
+        const wing = this.mesh(new THREE.BoxGeometry(0.2, 0.1, 0.012), m, g, Math.sin(ry) * 0.17 + 0, 0.255, Math.cos(ry) * 0.17 + (ry === 0 ? 0.02 : 0));
+        wing.rotation.set(rx, ry, 0);
+      }
+      this.mesh(new THREE.SphereGeometry(0.03, 8, 6), std(0xf2efe6, 0.5), g, 0, 0.275, 0.17);
+      const blue = std(0x2a8fd0, 0.6);
+      for (let i = 0; i < 3; i++) { const f = this.mesh(new THREE.CapsuleGeometry(0.014, 0.17, 4, 6), blue, g, 0.17 + i * 0.015, 0.31 + i * 0.012, -0.02 - i * 0.03); f.rotation.set(0.3 * i, 0, -1.0 - i * 0.18); }
+      return;
+    }
+    if (hat.kind === 'gorra') {
+      const dome = this.mesh(new THREE.SphereGeometry(0.128, 20, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), m, g, 0, 0.158, -0.004);
+      dome.scale.set(0.97, 1.0, 1.06);
+      const visor = this.mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.012, 20, 1, false, -Math.PI * 0.5, Math.PI), m, g, 0, 0.178, 0.115);
+      visor.rotation.x = 0.1; visor.scale.set(1.0, 1, 1.15);
+    } else {
+      this.mesh(new THREE.CylinderGeometry(0.215, 0.215, 0.012, 28), m, g, 0, 0.215, 0.01);
+      const crown = this.mesh(new THREE.CylinderGeometry(0.108, 0.128, 0.115, 22), m, g, 0, 0.27, 0.0);
+      crown.scale.set(0.95, 1, 1.05);
+      this.mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.02, 22), std(0x161616, 0.6), g, 0, 0.232, 0.0).scale.set(0.95, 1, 1.05);
+    }
+  }
+
+  private buildDogeMask(g: THREE.Group) {
+    const gold = std(0xe7b04a, 0.45, 0, { clearcoat: 0.6, clearcoatRoughness: 0.3 });
+    const cream = std(0xf4e9d2, 0.4, 0, { clearcoat: 0.5, clearcoatRoughness: 0.3 });
+    const black = std(0x0d0b0a, 0.25, 0, { clearcoat: 0.8 });
+    const dome = this.mesh(new THREE.SphereGeometry(0.15, 22, 16), gold, g, 0, 0.15, -0.005);
+    dome.scale.set(1.0, 1.05, 1.05);
+    // cuello/papada de goma, blanca
+    const neck = this.mesh(new THREE.CylinderGeometry(0.1, 0.125, 0.14, 18), cream, g, 0, -0.015, 0.0);
+    neck.scale.z = 1.1;
+    // hocico blanco
+    const snout = this.mesh(new THREE.CapsuleGeometry(0.058, 0.1, 6, 14), cream, g, 0, 0.082, 0.14);
+    snout.rotation.x = Math.PI / 2; snout.scale.set(1.1, 1, 0.8);
+    this.mesh(new THREE.SphereGeometry(0.03, 12, 10), black, g, 0, 0.108, 0.218).scale.set(1.2, 0.85, 0.9);
+    // sonrisa ladeada
+    this.mesh(new THREE.BoxGeometry(0.09, 0.008, 0.012), black, g, 0, 0.05, 0.19).rotation.z = 0.12;
+    for (const sx of [-1, 1]) {
+      // ojos grandes mirando de lado
+      const white = this.mesh(new THREE.SphereGeometry(0.036, 14, 12), std(0xfdfdfd, 0.1, 0, { clearcoat: 1 }), g, sx * 0.065, 0.178, 0.105);
+      white.scale.set(1, 1.05, 0.7);
+      this.mesh(new THREE.SphereGeometry(0.019, 10, 8), black, g, sx * 0.065 + 0.012, 0.172, 0.13).scale.z = 0.5;
+      // orejas puntiagudas
+      const ear = this.mesh(new THREE.ConeGeometry(0.06, 0.18, 4), gold, g, sx * 0.085, 0.31, -0.01);
+      ear.rotation.z = -sx * 0.22; ear.scale.z = 0.5;
+      const inner = this.mesh(new THREE.ConeGeometry(0.035, 0.12, 4), cream, g, sx * 0.085, 0.305, 0.012);
+      inner.rotation.z = -sx * 0.22; inner.scale.z = 0.3;
+    }
+  }
+
+  private buildBagMask(g: THREE.Group, color = 0x141414) {
+    const bag = std(color, 0.7, 0, { sheen: 0.4, sheenColor: new THREE.Color(0x888888) });
+    const hole = std(0x000000, 1);
+    const box = this.mesh(new THREE.BoxGeometry(0.3, 0.38, 0.28), bag, g, 0, 0.17, 0.0);
+    box.scale.set(1, 1, 1);
+    // pliegue superior
+    this.mesh(new THREE.BoxGeometry(0.3, 0.02, 0.28), std(new THREE.Color(color).multiplyScalar(0.7).getHex(), 0.8), g, 0, 0.365, 0.0);
+    for (const sx of [-1, 1]) {
+      const eye = this.mesh(new THREE.BoxGeometry(0.07, 0.085, 0.01), hole, g, sx * 0.075, 0.2, 0.142);
+      eye.rotation.z = sx * 0.06;
+    }
+    // sonrisa de Marshmello
+    const smile = this.mesh(new THREE.TorusGeometry(0.075, 0.009, 6, 18, Math.PI), std(0x050505, 0.9), g, 0, 0.13, 0.143);
+    smile.rotation.z = Math.PI;
+  }
+
+  private buildAlienMask(g: THREE.Group) {
+    const green = std(0x8fb89a, 0.35, 0, { clearcoat: 0.6, clearcoatRoughness: 0.25 });
+    const black = std(0x050805, 0.15, 0.2, { clearcoat: 1 });
+    // cráneo alargado hacia atrás
+    const dome = this.mesh(new THREE.SphereGeometry(0.14, 22, 16), green, g, 0, 0.17, -0.03);
+    dome.scale.set(0.95, 1.4, 1.1);
+    const chin = this.mesh(new THREE.SphereGeometry(0.085, 14, 10), green, g, 0, 0.04, 0.05);
+    chin.scale.set(0.9, 0.9, 1);
+    for (const sx of [-1, 1]) {
+      // ojos negros grandes en forma de almendra
+      const eye = this.mesh(new THREE.SphereGeometry(0.052, 14, 10), black, g, sx * 0.058, 0.14, 0.12);
+      eye.scale.set(1.2, 0.62, 0.45); eye.rotation.z = -sx * 0.5;
+    }
+    this.mesh(new THREE.BoxGeometry(0.035, 0.006, 0.01), black, g, 0, 0.045, 0.135);
+    for (const sx of [-1, 1]) this.mesh(new THREE.SphereGeometry(0.006, 5, 4), black, g, sx * 0.01, 0.09, 0.145);
+  }
+
+  /** Cabeza de hamburguesa con antifaz de luchador (Big Mac) */
+  private buildBurgerMask(g: THREE.Group) {
+    const bun = std(0xd9a040, 0.5, 0, { clearcoat: 0.4, clearcoatRoughness: 0.4 });
+    const patty = std(0x4a2a18, 0.8);
+    const lettuce = std(0x6cc04a, 0.7);
+    const cheese = std(0xf2c230, 0.5);
+    const R = 0.15;
+    // pan de arriba
+    const top = this.mesh(new THREE.SphereGeometry(R, 22, 12, 0, Math.PI * 2, 0, Math.PI * 0.5), bun, g, 0, 0.255, 0.0);
+    top.scale.set(1.05, 0.85, 1.05);
+    for (let i = 0; i < 9; i++) { const a = i * 0.7; const sd = this.mesh(new THREE.SphereGeometry(0.008, 5, 4), std(0xf6e6c0, 0.5), g, Math.cos(a) * 0.07 * (0.4 + (i % 3) * 0.3), 0.37 - (i % 3) * 0.02, Math.sin(a) * 0.07 * (0.4 + (i % 3) * 0.3)); sd.scale.y = 0.6; }
+    // carne, lechuga, queso, carne, pan de abajo (cara)
+    const layer = (y: number, h: number, r: number, mat: THREE.Material) => { const c = this.mesh(new THREE.CylinderGeometry(r, r, h, 24), mat, g, 0, y, 0); c.scale.set(1.04, 1, 1.04); return c; };
+    layer(0.225, 0.04, R * 1.04, patty);
+    const lt = this.mesh(new THREE.TorusGeometry(R * 1.02, 0.022, 6, 24), lettuce, g, 0, 0.195, 0); lt.rotation.x = Math.PI / 2; lt.scale.set(1.04, 1.04, 1.5);
+    const ch = this.mesh(new THREE.BoxGeometry(R * 2.15, 0.012, R * 2.15), cheese, g, 0, 0.18, 0); ch.rotation.y = Math.PI / 4;
+    layer(0.15, 0.04, R * 1.04, patty);
+    layer(0.085, 0.09, R * 1.0, bun);
+    this.mesh(new THREE.SphereGeometry(R, 20, 10, 0, Math.PI * 2, Math.PI * 0.5, Math.PI * 0.5), bun, g, 0, 0.04, 0).scale.set(1.0, 0.7, 1.0);
+    // antifaz de luchador rojo y dorado sobre los ojos
+    const red = std(0xc1272d, 0.4, 0, { clearcoat: 0.5 });
+    const gold = std(0xd8b43a, 0.3, 0.9);
+    for (const sx of [-1, 1]) {
+      const frame = this.mesh(new THREE.TorusGeometry(0.036, 0.008, 6, 14), gold, g, sx * 0.058, 0.175, 0.15, false);
+      frame.scale.set(1.3, 0.8, 1); frame.rotation.z = -sx * 0.2;
+      const eye = this.mesh(new THREE.SphereGeometry(0.02, 10, 8), std(0x15100c, 0.2, 0, { clearcoat: 1 }), g, sx * 0.058, 0.172, 0.155, false);
+      eye.scale.set(1.2, 0.9, 0.4);
+    }
+    const nose = this.mesh(new THREE.BoxGeometry(0.035, 0.09, 0.012), red, g, 0, 0.165, 0.158, false);
+    nose.rotation.z = 0.0;
+  }
+
   private buildHorseMask(g: THREE.Group) {
     const pink = std(0xe46ec0, 0.32, 0, { clearcoat: 0.7, clearcoatRoughness: 0.25, sheen: 0.4, sheenColor: new THREE.Color(0xffb0e0) });
     const dark = std(0x2a1218, 0.6);
@@ -378,6 +578,25 @@ export class FighterModel {
     mane.rotation.x = 0.25;
     const mane2 = this.mesh(new THREE.BoxGeometry(0.05, 0.3, 0.05), pinkDeep, g, 0, -0.1, -0.2);
     mane2.rotation.x = -0.15;
+  }
+
+  /** Bate de béisbol: se agarra por el mango y el cuerpo apunta hacia delante */
+  private makeBat(): THREE.Group {
+    const g = new THREE.Group();
+    const wood = std(0xc79a5a, 0.55, 0.02, { clearcoat: 0.35, clearcoatRoughness: 0.4 });
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.18, 10), std(0x1a1a1a, 0.8));
+    grip.position.y = -0.04;
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.052, 0.022, 0.6, 14), wood);   // más ancho hacia la punta (abajo)
+    body.position.y = -0.4;
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(0.052, 12, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), wood);
+    cap.position.y = -0.7;
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.03, 10, 8), std(0x1a1a1a, 0.8));
+    knob.position.y = 0.06;
+    g.add(grip, body, cap, knob);
+    g.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
+    g.position.set(0, -0.02, 0.05);
+    g.rotation.x = -Math.PI / 2 + 0.2;
+    return g;
   }
 
   private makeMic(): THREE.Group {
@@ -476,17 +695,18 @@ export class FighterModel {
   }
 
   // ---------------------------------------------------------------- poses
-  setProp(name: 'chair' | 'maletin' | 'microfono' | 'casco' | 'cuerno' | null) {
+  setProp(name: 'chair' | 'maletin' | 'microfono' | 'casco' | 'cuerno' | 'bate' | null) {
     this.chair.visible = name === 'chair';
     this.briefcase.visible = name === 'maletin';
     this.mic.visible = name === 'microfono';
+    this.bat.visible = name === 'bate';
     this.helmet.visible = name === 'casco';
     this.horn.visible = name === 'cuerno';
   }
 
   /** Objeto que se está mostrando (para animarlo de entrada) */
   propObject(name: string): THREE.Object3D | null {
-    return ({ chair: this.chair, maletin: this.briefcase, microfono: this.mic, casco: this.helmet, cuerno: this.horn } as Record<string, THREE.Object3D>)[name] ?? null;
+    return ({ chair: this.chair, maletin: this.briefcase, microfono: this.mic, bate: this.bat, casco: this.helmet, cuerno: this.horn } as Record<string, THREE.Object3D>)[name] ?? null;
   }
 
   applyPose(p: Pose, time: number) {

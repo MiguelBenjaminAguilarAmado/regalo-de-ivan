@@ -2,12 +2,12 @@ import type { Input } from '../combat/types';
 import { emptyInput } from '../combat/types';
 import type { CameraRig } from '../render/CameraRig';
 
-type Edge = 'light' | 'heavy' | 'grab' | 'taunt' | 'finisher';
+type Edge = 'light' | 'heavy' | 'grab' | 'taunt' | 'finisher' | 'tag';
 
 /** Teclado + ratón + mando + controles táctiles → acciones abstractas. */
 export class InputManager {
   private keys = new Set<string>();
-  private edges: Record<Edge, boolean> = { light: false, heavy: false, grab: false, taunt: false, finisher: false };
+  private edges: Record<Edge, boolean> = { light: false, heavy: false, grab: false, taunt: false, finisher: false, tag: false };
   private mouseDown = new Set<number>();
   /** Controles táctiles escriben aquí */
   touch = { mx: 0, mz: 0, block: false, run: false };
@@ -31,6 +31,7 @@ export class InputManager {
         case 'KeyL': case 'KeyC': this.edges.grab = true; break;
         case 'KeyE': case 'KeyT': this.edges.taunt = true; break;
         case 'KeyF': case 'KeyQ': this.edges.finisher = true; break;
+        case 'KeyR': this.edges.tag = true; break;
         default: break;
       }
     };
@@ -106,7 +107,7 @@ export class InputManager {
       if (pad.buttons[13]?.pressed) iz -= 1;
       const b = (i: number) => !!pad.buttons[i]?.pressed;
       const edge = (i: number, a: Edge) => { if (b(i) && !this.padPrev[i]) { this.edges[a] = true; this.lastDevice = 'mando'; } };
-      edge(0, 'light'); edge(2, 'heavy'); edge(1, 'grab'); edge(3, 'taunt'); edge(5, 'finisher');
+      edge(0, 'light'); edge(2, 'heavy'); edge(1, 'grab'); edge(3, 'taunt'); edge(5, 'finisher'); edge(8, 'tag');
       if (b(9) && !this.padPrev[9]) this.onPause?.();
       block = block || b(4) || b(6);
       run = run || b(7) || (pad.buttons[10]?.pressed ?? false);

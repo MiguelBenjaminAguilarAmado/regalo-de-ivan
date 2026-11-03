@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { Match } from '../combat/Match';
+import type { Fighter, Match } from '../combat/Match';
+import { RING, RING_Y } from '../combat/Match';
 import type { GameEvent } from '../combat/types';
 import { FighterModel } from '../fighters/FighterModel';
 import { Animator } from '../fighters/Pose';
@@ -11,24 +12,27 @@ import { Audio } from '../audio/Audio';
 import { Manchester } from '../arenas/Manchester';
 import { Matamoros } from '../arenas/Matamoros';
 import { Summons } from './Summons';
+import { MinionView } from './Minions';
 
 export interface ViewHooks {
   message: (text: string, big?: boolean) => void;
   flash: (color: string, amount: number) => void;
   banner: (text: string, color: string) => void;
   rumble?: (strong: number, weak: number, ms: number) => void;
+  combo?: (fighter: number, n: number) => void;
 }
 
 const REF_LOOK = { skin: 0xc9a07c, hair: 0x15110e, outfit: 'arbitro' as const, outfitColor: 0x0d0d10, trunksColor: 0x0d0d10, accent: 0xffffff, build: 1.0, height: 1.0 };
 
 export class BattleView {
-  models: FighterModel[];
-  anims = [new Animator(), new Animator()];
+  /** Un modelo y un animador por cada luchador (activos y compañeros en el apron) */
+  private rigs = new Map<Fighter, { model: FighterModel; anim: Animator }>();
   refModel: FighterModel;
   refAnim = new Animator();
   fx = new Fx();
   cam = new CameraRig();
   summons: Summons;
+  minions = new MinionView();
   timeScale = 1;
   hitstop = 0;
   excite = 0.35;
@@ -45,10 +49,10 @@ export class BattleView {
     scene.fog = new THREE.FogExp2(arena.fogColor, arena.fogDensity);
     scene.add(arena.group, this.fx.group);
     this.summons = new Summons(this.fx, () => [match.f[0], match.f[1]], () => stage.camera.position);
-    scene.add(this.summons.group);
-    this.models = match.f.map((f) => new FighterModel(f.data.appearance));
+    scene.add(this.summons.group, this.minions.group);
+    for (const f of [...match.f, ...match.bench]) if (f) this.rigFor(f);
     this.refModel = new FighterModel(REF_LOOK);
-    for (const m of [...this.models, this.refModel]) scene.add(m.root);
+    scene.add(this.refModel.root);
     // marcadores sobre la cabeza
     [0x4aa8ff, 0xff5a4a].forEach((c, i) => {
       const mk = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.26, 4), new THREE.MeshBasicMaterial({ color: c, toneMapped: false }));
@@ -64,12 +68,24 @@ export class BattleView {
 
   dispose() {
     const scene = this.stage.scene;
-    scene.remove(this.arena.group, this.fx.group, this.summons.group);
+    scene.remove(this.arena.group, this.fx.group, this.summons.group, this.minions.group);
     this.summons.dispose();
-    for (const m of [...this.models, this.refModel]) { scene.remove(m.root); m.dispose(); }
+    this.minions.dispose();
+    for (const r of this.rigs.values()) { scene.remove(r.model.root); r.model.dispose(); }
+    scene.remove(this.refModel.root); this.refModel.dispose();
     for (const mk of this.markers) { scene.remove(mk); mk.geometry.dispose(); }
     this.arena.dispose();
     scene.fog = null;
+  }
+
+  private rigFor(f: Fighter) {
+    let r = this.rigs.get(f);
+    if (!r) {
+      r = { model: new FighterModel(f.data.appearance), anim: new Animator() };
+      this.rigs.set(f, r);
+      this.stage.scene.add(r.model.root);
+    }
+    return r;
   }
 
   private slow(scale: number, dur: number) { this.slowV = scale; this.slowT = dur; }
@@ -90,10 +106,10 @@ export class BattleView {
     Audio.setCrowd(0.2 + this.excite * 0.6);
     Audio.tickCrowd(dt);
     for (let i = 0; i < 2; i++) {
-      const f = m.f[i], mod = this.models[i];
+      const f = m.f[i], rig = this.rigFor(f), mod = rig.model;
       mod.root.position.set(f.x, f.y, f.z);
       mod.root.rotation.y = f.yaw;
-      const pose = this.anims[i].update(f, dt, t);
+      const pose = rig.anim.update(f, dt, t);
       mod.applyPose(pose, t);
       // objetos
       const mv = f.move;
@@ -101,11 +117,12 @@ export class BattleView {
         mod.setProp(mv.prop);
         const grow = Math.min(1, f.t / Math.max(0.08, f.s * 0.35));
         // la silla, el casco y el cuerno "aparecen de la nada"
-        mod.propObject(mv.prop)?.scale.setScalar(mv.prop === 'maletin' || mv.prop === 'microfono' ? 1 : 0.15 + 0.85 * grow);
+        mod.propObject(mv.prop)?.scale.setScalar(mv.prop === 'maletin' || mv.prop === 'microfono' || mv.prop === 'bate' ? 1 : 0.15 + 0.85 * grow);
       } else mod.setProp(null);
       // aura del finisher
       let glow = 0;
       if (f.state === 'attack' && mv?.kind === 'finisher' && f.t < f.s + f.a + 0.3) glow = Math.min(1, f.t / f.s) * (0.7 + 0.3 * Math.sin(t * 30));
+      else if (f.boost > 0 && f.state !== 'win') glow = 0.22 + 0.12 * Math.sin(t * 9);
       else if (f.mom >= 100 && f.state !== 'win') glow = 0.18 + 0.1 * Math.sin(t * 6);
       mod.setGlow(this.glowColor[i], glow);
       // marcador
@@ -113,6 +130,19 @@ export class BattleView {
       mk.visible = f.state !== 'win' && !(f.lying);
       mk.position.set(f.x, f.y + 2.35 * mod.ap.height + Math.sin(t * 4) * 0.05, f.z);
       mk.rotation.y = t * 2;
+    }
+    // compañeros esperando su turno, apoyados en las cuerdas del rincón
+    for (let i = 0; i < 2; i++) {
+      const b = m.bench[i];
+      if (!b) continue;
+      const rig = this.rigFor(b);
+      const sx = i === 0 ? -1 : 1;
+      rig.model.root.position.set(sx * (RING + 0.45), RING_Y, -RING + 0.9);
+      rig.model.root.rotation.y = Math.atan2(-sx, 0.6);
+      rig.model.setProp(null);
+      rig.model.setGlow(0xffffff, 0);
+      if (b.hp > 0) b.state = 'idle';
+      rig.model.applyPose(rig.anim.update(b, dt, t), t);
     }
     // árbitro: siempre detrás de los luchadores respecto a la cámara
     {
@@ -130,6 +160,7 @@ export class BattleView {
     this.cam.update(dt, this.stage.camera, m.f[0], m.f[1], portrait);
     // arena y fx
     this.summons.update(dt);
+    this.minions.sync(m, dt, t);
     this.arena.update(dt, t, this.excite, this.stage.viewportH);
     this.fx.setScale(this.stage.viewportH);
     this.fx.update(dt);
@@ -220,7 +251,76 @@ export class BattleView {
         case 'koCount': if (e.n > 0) Audio.sfx('count'); break;
         case 'outCount': if (e.n >= 4) { Audio.sfx('count'); } break;
         case 'foul': Audio.sfx('foul'); this.hooks.message(e.seen ? '¡FALTA! El árbitro lo ha visto' : '¡Falta! … el árbitro no miraba', e.seen); break;
-        case 'summon': this.summons.spawn(e.kind, e.fighter, e.target, e.dur); break;
+        case 'summon': this.summons.spawn(e.kind, e.fighter, e.target, e.dur, e.x, e.z); break;
+        case 'minionHit':
+          this.fx.sparks(e.x, 1.2, e.z, e.dead ? 18 : 8, 0xd8b25a, 4);
+          Audio.sfx(e.dead ? 'knock' : 'hit', 0.8);
+          if (e.dead) this.fx.dust(e.x, 1.0, e.z, 10, 1.2);
+          break;
+        case 'adrenaline':
+          this.glowColor[e.fighter] = 0xff7a1a;
+          this.hooks.message('¡ADRENALINA de ' + m.f[e.fighter].data.name + '!', true);
+          this.hooks.flash('#ff7a1a', 0.3);
+          Audio.sfx('ready'); Audio.cheer(1.2);
+          this.cam.shake = Math.max(this.cam.shake, 0.4);
+          this.excite = Math.min(1, this.excite + 0.2);
+          break;
+        case 'combo': this.hooks.combo?.(e.fighter, e.n); break;
+        case 'bonus': {
+          const f = m.f[e.side];
+          this.hooks.message(e.text, true);
+          this.fx.sparks(f.x, f.y + 1.5, f.z, 36, 0x5cd67a, 6, 0.09);
+          Audio.sfx('unlock'); Audio.cheer(1);
+          break;
+        }
+        case 'blackout': this.arena.setBlackout(e.on); if (e.on) { Audio.sfx('slam'); this.cam.shake = Math.max(this.cam.shake, 0.4); } break;
+        case 'phase':
+          this.glowColor[e.side] = 0xff3030;
+          this.hooks.banner('¡SE ENFURECE!', '#ff3030');
+          this.hooks.message(e.text, true);
+          this.hooks.flash('#ff3030', 0.4);
+          Audio.sfx('finisher'); Audio.cheer(1.6);
+          this.cam.shake = Math.max(this.cam.shake, 0.9); this.excite = 1;
+          break;
+        case 'gust':
+          Audio.sfx('whoosh', 1); this.cam.shake = Math.max(this.cam.shake, 0.25);
+          this.fx.dust(0, 1.2, 0, 24, 4);
+          break;
+        case 'cage':
+          this.fx.sparks(e.x, 1.6, e.z, 26, 0xcfd6e0, 6);
+          Audio.sfx('slam'); this.cam.shake = Math.max(this.cam.shake, 0.8); this.hitstop = Math.max(this.hitstop, 0.09);
+          this.hooks.message('¡Contra la jaula!', true);
+          break;
+        case 'duo':
+          this.hooks.message(`★ DÚO DINÁMICO: ${e.name}`, true);
+          this.glowColor[e.side] = 0xffd45e;
+          break;
+        case 'tag':
+          this.hooks.message(e.forced ? `¡${e.out} cae! Entra ${e.inn}` : `¡Relevo! Entra ${e.inn}`, true);
+          Audio.sfx('ready'); Audio.cheer(1.2);
+          this.fx.dust(m.f[e.side].x, m.f[e.side].y, m.f[e.side].z, 14, 1.6);
+          this.cam.shake = Math.max(this.cam.shake, 0.3);
+          break;
+        case 'mob':
+          Audio.sfx('summon'); Audio.cheer(2);
+          this.cam.shake = Math.max(this.cam.shake, 0.7);
+          this.hooks.flash('#c1272d', 0.3);
+          this.excite = 1;
+          break;
+        case 'quake': {
+          // planchazo de Konguito: tiembla todo el ring
+          const f = m.f[e.fighter];
+          this.fx.dust(e.x, 1.0, e.z, 40, 3.4);
+          this.fx.burst(e.x, 1.2, e.z, 0xd8b25a, 40, 7);
+          Audio.sfx('slam'); Audio.sfx('knock');
+          this.cam.shake = 1.4;
+          this.hitstop = Math.max(this.hitstop, 0.14);
+          this.hooks.rumble?.(1, 1, 380);
+          this.hooks.flash('#d8b25a', 0.25);
+          this.excite = 1; Audio.cheer(1.4);
+          void f;
+          break;
+        }
         case 'toreo': Audio.sfx('olé'); Audio.cheer(1.5); this.hooks.flash('#ffd45e', 0.25); this.excite = 1; break;
         case 'taunt': this.cam.onEvent('taunt'); Audio.cheer(0.8); Audio.sfx('click'); this.excite = Math.min(1, this.excite + 0.1); break;
         case 'ready': Audio.sfx('ready'); this.hooks.message('¡' + m.f[e.fighter].data.name + ' tiene el FINISHER listo!', true); break;

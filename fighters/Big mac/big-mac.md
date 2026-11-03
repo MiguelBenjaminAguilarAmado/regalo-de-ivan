@@ -1,0 +1,9 @@
+Big Mac (conocido también como "El Caníbal de Big Mac") es un luchador y figura oscura que comenzó su trayectoria en los garitos clandestinos de las 3000 Viviendas, donde coincidió y luchó en los mismos ambientes marginales que Petisui. Fue contratado por Pablo Motos para formar parte de la plantilla de El Hoyo Wrestling impulsado por su reputación de salvajismo e inestabilidad en el ring. A pesar de ingresar como una figura aterradora y despiadada dentro del circuito marginal, su paso por la empresa ha estado rodeado de controversia, siendo etiquetado por rivales y fanáticos como un gladiador impredecible al que Pablo Motos utiliza para amedrentar a otros luchadores del vestuario.
+
+Su estilo de combate es puramente encarnizado y visceral, caracterizado por una resistencia física colosal y una agresividad desmedida. No busca el espectáculo ni la técnica depurada, sino castigar físicamente a sus oponentes a base de mordiscos, presiones ilegales y agarres sofocantes, siendo propenso a ser sancionado o descalificado por su falta de control dentro del cuadrilátero.
+
+En cuanto a su apariencia física y vestimenta, destaca por su complexión voluminosa e intimidante, luciendo atuendos desgastados y sombríos que evocan su pasado en los combates ilegales y reforzando su aterradora imagen de "caníbal" del ring. (o en otras palabras, es un big mac)
+
+Su finisher es "El Bocado Caníbal", un devastador agarre de sumisión combinado con un impacto frontal a la cabeza que deja al rival completamente aturdido y sin capacidad de respuesta sobre la lona.
+
+NO HAGAS A BIG MAC TODAVIA HASTA TENER FOTO DE REFERENCIA, SI HAY UNA HAZLO

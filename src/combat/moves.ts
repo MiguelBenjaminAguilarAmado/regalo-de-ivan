@@ -30,14 +30,16 @@ add(
   S({ id: 'casco_romano', name: 'Cabezazo del centurión', startup: 0.32, active: 0.1, recovery: 0.45, damage: 13, range: 1.4, stamina: 14, hitstun: 0.5, knockback: 1.1, knockdown: true, momentum: 12, anim: 'headbutt', lunge: 2.2, prop: 'casco', announce: '¡Pablo Motos se pone el casco romano!' }),
   S({ id: 'momia', name: 'La momia', startup: 0.85, active: 0.14, recovery: 0.5, damage: 12, range: 2.8, stamina: 16, hitstun: 0.6, knockback: 1.6, knockdown: true, momentum: 14, anim: 'summon', summon: 'momia', announce: '¡Pablo Motos invoca una MOMIA!' }),
   S({ id: 'tanque', name: 'El tanque', startup: 1.15, active: 0.16, recovery: 0.7, damage: 17, range: 3.6, stamina: 20, hitstun: 0.6, knockback: 3.0, knockdown: true, sendOut: true, momentum: 18, anim: 'summon', summon: 'tanque', announce: '¡¡Pablo Motos saca un TANQUE!!' }),
+  // Golpe sucio de Dark Sin Facha: saca un bate de béisbol (no reglamentario)
+  S({ id: 'batazo', name: 'Batazo', startup: 0.3, active: 0.1, recovery: 0.42, damage: 12, range: 1.7, stamina: 13, hitstun: 0.5, knockback: 1.3, knockdown: true, momentum: 11, anim: 'micswing', foul: true, prop: 'bate', announce: '¡Dark Sin Facha saca un BATE!' }),
   S({ id: 'golpe_bajo', name: 'Golpe bajo', startup: 0.2, active: 0.08, recovery: 0.38, damage: 10, range: 1.2, stamina: 10, hitstun: 0.8, knockback: 0.2, momentum: 9, anim: 'lowblow', foul: true }),
 );
 
 // ---------- Burlas ----------
 add(
-  S({ id: 'burla', name: 'Burla', kind: 'taunt', startup: 0.2, active: 0, recovery: 0.8, damage: 0, range: 0, stamina: 0, hitstun: 0, knockback: 0, momentum: 18, anim: 'taunt' }),
-  S({ id: 'vacile', name: 'Vacile', kind: 'taunt', startup: 0.25, active: 0, recovery: 1.0, damage: 0, range: 0, stamina: 0, hitstun: 0, knockback: 0, momentum: 28, anim: 'taunt2' }),
-  S({ id: 'rugido', name: 'Rugido', kind: 'taunt', startup: 0.25, active: 0, recovery: 0.9, damage: 0, range: 0, stamina: 0, hitstun: 0, knockback: 0, momentum: 22, anim: 'taunt' }),
+  S({ id: 'burla', name: 'Burla', kind: 'taunt', startup: 0.2, active: 0, recovery: 0.8, damage: 0, range: 0, stamina: 0, hitstun: 0, knockback: 0, momentum: 7, anim: 'taunt' }),
+  S({ id: 'vacile', name: 'Vacile', kind: 'taunt', startup: 0.25, active: 0, recovery: 1.0, damage: 0, range: 0, stamina: 0, hitstun: 0, knockback: 0, momentum: 11, anim: 'taunt2' }),
+  S({ id: 'rugido', name: 'Rugido', kind: 'taunt', startup: 0.25, active: 0, recovery: 0.9, damage: 0, range: 0, stamina: 0, hitstun: 0, knockback: 0, momentum: 9, anim: 'taunt' }),
 );
 
 // ---------- Agarre (el intento) ----------
@@ -110,6 +112,73 @@ add(
   S({ id: 'meteoro', name: 'El meteoro', kind: 'finisher', startup: 0.9, active: 0.2, recovery: 1.1, damage: 36, range: 3.2, stamina: 0, hitstun: 0, knockback: 2.4, knockdown: true, momentum: 0, anim: 'finLeap', lunge: 5.4, vfx: { color: 0xff6a4a, callout: 'EL METEORO' } }),
   S({ id: 'trueno_barrio', name: 'El trueno del barrio', kind: 'finisher', startup: 1.0, active: 0.14, recovery: 0.95, damage: 34, range: 1.7, stamina: 0, hitstun: 0, knockback: 1.6, knockdown: true, momentum: 0, anim: 'finHammer', lunge: 1.2, vfx: { color: 0x66b7ff, callout: 'EL TRUENO DEL BARRIO' } }),
   S({ id: 'ciclon', name: 'El ciclón', kind: 'finisher', startup: 0.95, active: 0.2, recovery: 1.0, damage: 33, range: 2.0, stamina: 0, hitstun: 0, knockback: 3.0, knockdown: true, sendOut: true, momentum: 0, anim: 'finSpin', lunge: 1.8, vfx: { color: 0x7dffb2, callout: 'EL CICLÓN' } }),
+);
+
+// Planchazo de Konguito desde el poste de la esquina (lo elige pickHeavy si está en una esquina; la trayectoria la lleva Match.stepDive)
+add(
+  S({ id: 'planchazo', name: 'Planchazo de esquina', startup: 1.2, active: 0.42, recovery: 0.95, damage: 17, range: 1.3, stamina: 20, hitstun: 0.6, knockback: 1.8, knockdown: true, momentum: 16, anim: 'finLeap', announce: '¡Konguito se sube a la esquina!' }),
+);
+
+// ---------- Finishers de los luchadores añadidos después ----------
+add(
+  S({
+    id: 'la_traicion', name: 'La traición', kind: 'finisher', startup: 0.8, active: 0.16, recovery: 0.95, damage: 34, range: 2.2, stamina: 0,
+    hitstun: 0, knockback: 2.8, knockdown: true, momentum: 0, anim: 'finKick', lunge: 2.8,
+    vfx: { color: 0xb34aff, callout: 'LA TRAICIÓN' },
+  }),
+  S({
+    id: 'corona_manchester', name: 'La corona de Manchester', kind: 'finisher', startup: 1.0, active: 0.14, recovery: 0.95, damage: 36, range: 1.8, stamina: 0,
+    hitstun: 0, knockback: 2.4, knockdown: true, momentum: 0, anim: 'finHammer', lunge: 1.4,
+    vfx: { color: 0x66a8ff, callout: 'LA CORONA DE MANCHESTER' },
+  }),
+  S({
+    id: 'sentencia_justa', name: 'La sentencia justa', kind: 'finisher', startup: 1.05, active: 0.55, recovery: 1.0, damage: 39, range: 1.8, stamina: 0,
+    hitstun: 0, knockback: 4.0, knockdown: true, momentum: 0, anim: 'finCharge', rush: 8,
+    vfx: { color: 0xe0e6ff, callout: 'LA SENTENCIA JUSTA' },
+  }),
+  S({
+    id: 'capa_invencible', name: 'La capa invencible', kind: 'finisher', startup: 0.85, active: 0.2, recovery: 1.0, damage: 35, range: 3.2, stamina: 0,
+    hitstun: 0, knockback: 2.6, knockdown: true, momentum: 0, anim: 'finLeap', lunge: 5.4,
+    vfx: { color: 0xff3a3a, callout: 'LA CAPA INVENCIBLE' },
+  }),
+  S({
+    id: 'golpe_novato', name: 'El golpe del novato', kind: 'finisher', startup: 0.85, active: 0.16, recovery: 0.95, damage: 36, range: 2.0, stamina: 0,
+    hitstun: 0, knockback: 3.0, knockdown: true, momentum: 0, anim: 'finPunch', lunge: 2.6,
+    vfx: { color: 0xff5a3a, callout: 'EL GOLPE DEL NOVATO' },
+  }),
+  S({
+    id: 'bocado_canibal', name: 'El bocado caníbal', kind: 'finisher', startup: 1.0, active: 0.16, recovery: 1.0, damage: 37, range: 1.6, stamina: 0,
+    hitstun: 0, knockback: 2.2, knockdown: true, momentum: 0, anim: 'headbutt', lunge: 1.8, foul: true,
+    vfx: { color: 0xffc21a, callout: 'EL BOCADO CANÍBAL' },
+  }),
+  S({
+    id: 'solazo', name: 'El solazo', kind: 'finisher', startup: 1.0, active: 0.14, recovery: 0.95, damage: 35, range: 1.8, stamina: 0,
+    hitstun: 0, knockback: 2.8, knockdown: true, momentum: 0, anim: 'finHammer', lunge: 1.4,
+    vfx: { color: 0xffc23a, callout: 'EL SOLAZO' },
+  }),
+  S({
+    id: 'impacto_boom', name: 'El impacto Boom', kind: 'finisher', startup: 1.0, active: 0.55, recovery: 1.0, damage: 38, range: 1.8, stamina: 0,
+    hitstun: 0, knockback: 4.0, knockdown: true, momentum: 0, anim: 'finCharge', rush: 8.5,
+    vfx: { color: 0xff5a2a, callout: 'EL IMPACTO BOOM' },
+  }),
+  // Oportunista: arranca más rápido que los demás finishers, pero pega algo menos
+  S({
+    id: 'fachazo_directo', name: 'El fachazo directo', kind: 'finisher', startup: 0.6, active: 0.14, recovery: 0.9, damage: 31, range: 1.9, stamina: 0,
+    hitstun: 0, knockback: 2.4, knockdown: true, momentum: 0, anim: 'finPunch', lunge: 2.6,
+    vfx: { color: 0x9aa0ff, callout: 'EL FACHAZO DIRECTO' },
+  }),
+  S({
+    id: 'salto_cheto', name: 'El salto cheto', kind: 'finisher', startup: 0.95, active: 0.2, recovery: 1.1, damage: 36, range: 3.2, stamina: 0,
+    hitstun: 0, knockback: 2.4, knockdown: true, momentum: 0, anim: 'finLeap', lunge: 5.6,
+    vfx: { color: 0xff9d1a, callout: 'EL SALTO CHETO' },
+  }),
+  // La puerta se abre, salen 5 de la tribu y apalean al rival (animación en Summons.tribe)
+  S({
+    id: 'ritual_satanico', name: 'Ritual satánico', kind: 'finisher', startup: 1.8, active: 0.2, recovery: 1.0, damage: 37, range: 3.6, stamina: 0,
+    hitstun: 0, knockback: 1.4, knockdown: true, momentum: 0, anim: 'summon', summon: 'tribu',
+    vfx: { color: 0xff2a2a, callout: 'RITUAL SATÁNICO' },
+    announce: '¡Kongui abre la puerta… y sale la tribu!',
+  }),
 );
 
 export const getMove = (id: string): Move => {

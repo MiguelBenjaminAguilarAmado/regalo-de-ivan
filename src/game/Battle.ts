@@ -7,6 +7,8 @@ import { makeArena } from './Showcase';
 import { Audio } from '../audio/Audio';
 import type { Game } from './Game';
 import { Narrator } from './Narrator';
+import { ARENA_INFO } from '../combat/arenaInfo';
+import { mutatorById, type MutatorId } from '../combat/mutators';
 
 export interface BattleOpts {
   p: FighterData; // jugador (índice 0)
@@ -16,16 +18,33 @@ export interface BattleOpts {
   demo?: boolean; // CPU vs CPU sin interfaz (pruebas)
   spectate?: boolean; // modo espectador: CPU vs CPU con cámara de director y narrador
   difficultyP?: Difficulty; // dificultad de la CPU 1 (espectador)
+  pPartner?: FighterData; // compañero del jugador (combate por parejas)
+  cPartner?: FighterData; // compañero de la CPU
+  /** Supervivencia: vida con la que empieza el jugador (puntos) y momentum inicial */
+  startHp?: number;
+  startMom?: number;
+  /** Modo entrenamiento: cómo se comporta el rival (el combate no termina nunca) */
+  training?: 'quieto' | 'guardia' | 'ataca';
+  /** Modificador de combate (Versus) */
+  mutator?: MutatorId;
+  /** Historia: límite de tiempo y cómo se decide, jefe con fases, objetivo y consejos que salen durante el combate */
+  timeLimit?: number;
+  timeMode?: 'hp' | 'player';
+  boss?: { at: number; power: number; speed: number; heal: number; text: string };
+  objective?: string;
+  tips?: string[];
+  /** Texto extra en la pantalla VS (p. ej. "SUPERVIVENCIA · RONDA 3") */
+  label?: string;
   seed?: number;
 }
 
 const STEP = 1 / 60;
-const REASON_TEXT = { ko: '¡KO!', pin: '¡PIN!', rendicion: '¡RENDICIÓN!', fuera: '¡CUENTA FUERA!' } as const;
+const REASON_TEXT = { ko: '¡KO!', pin: '¡PIN!', rendicion: '¡RENDICIÓN!', fuera: '¡CUENTA FUERA!', tiempo: '¡TIEMPO!' } as const;
 
 export class Battle {
   match: Match;
   view: BattleView;
-  aiC: AIController;
+  aiC: { update(dt: number, m: Match): Input };
   aiP: AIController | null;
   phase: 'intro' | 'fight' | 'over' = 'intro';
   paused = false;
@@ -37,21 +56,34 @@ export class Battle {
   readonly playerIdx = 0;
   narrator: Narrator | null = null;
   private narrStarted = false;
+  private tipT = -1;
+  private tipI = 0;
   private keyHandler: ((e: KeyboardEvent) => void) | null = null;
   /** Índice del jugador para el HUD (−1 si nadie juega) */
   get hudPlayer() { return this.opts.spectate ? -1 : this.playerIdx; }
 
   constructor(private game: Game, public opts: BattleOpts) {
-    this.match = new Match(opts.p, opts.c);
+    this.match = new Match(opts.p, opts.c, Math.random, ARENA_INFO[opts.arena].rules, [opts.pPartner ?? null, opts.cPartner ?? null]);
+    if (opts.startHp != null) this.match.f[0].hp = Math.max(1, Math.min(this.match.f[0].maxHp, opts.startHp));
+    if (opts.startMom) this.match.f[0].mom = opts.startMom;
     const arena = makeArena(opts.arena, game.effectiveQuality);
     this.view = new BattleView(game.stage, arena, this.match, {
       message: (t, b) => game.hud.message(t, b),
       flash: (c, a) => game.hud.flash(c, a),
       banner: (t, c) => game.hud.banner(t, c),
       rumble: (st, wk, ms) => game.input.rumble(st, wk, ms),
+      combo: (i, n) => game.hud.combo(i, n),
     });
     this.view.cam.shakeScale = game.save.settings.shake ? 1 : 0;
-    this.aiC = new AIController(1, opts.difficulty);
+    this.aiC = opts.training === 'quieto' || opts.training === 'guardia'
+      ? { update: () => { const i = emptyInput(); i.block = opts.training === 'guardia'; return i; } }
+      : new AIController(1, opts.difficulty);
+    this.match.training = !!opts.training;
+    if (opts.timeLimit) { this.match.timeLimit = opts.timeLimit; this.match.timeMode = opts.timeMode ?? 'hp'; }
+    if (opts.boss) this.match.boss = { side: 1, done: false, ...opts.boss };
+    const mut = mutatorById(opts.mutator);
+    this.match.mod = { dmg: mut.dmg, mom: mut.mom };
+    if (mut.hp !== 1) for (const f of [...this.match.f, ...this.match.bench]) if (f) { f.maxHp *= mut.hp; f.hp = f.maxHp; }
     this.aiP = opts.demo || opts.spectate ? new AIController(0, opts.spectate ? (opts.difficultyP ?? opts.difficulty) : 'intermedia') : null;
     this.view.cam.auto = !!opts.spectate;
     if (opts.spectate) {
@@ -66,11 +98,12 @@ export class Battle {
     }
     game.input.enabled = false;
     game.input.reset();
-    game.hud.show(this.match, this.hudPlayer, opts.spectate ? game.spectateHint() : game.controlsHint(), game.save.settings.fps);
+    game.hud.show(this.match, this.hudPlayer, opts.spectate ? game.spectateHint() : game.controlsHint(!!opts.pPartner), game.save.settings.fps);
     const interactive = !opts.demo && !opts.spectate;
     game.touch.show(game.useTouch && interactive);
+    game.touch.setTag(!!opts.pPartner);
     document.body.classList.toggle('touch-mode', game.useTouch && interactive);
-    Audio.music(opts.arena === 'manchester' ? 'manchester' : 'matamoros');
+    Audio.music(ARENA_INFO[opts.arena].music);
     Audio.setCrowd(0.3);
   }
 
@@ -82,15 +115,21 @@ export class Battle {
 
     if (this.phase === 'intro') {
       this.introT += dt;
-      if (!this.narrStarted && this.narrator && this.introT > 0.5) { this.narrStarted = true; this.narrator.start(this.opts.arena === 'manchester' ? 'Manchester' : 'Matamoros'); }
+      if (!this.narrStarted && this.narrator && this.introT > 0.5) { this.narrStarted = true; this.narrator.start(ARENA_INFO[this.opts.arena].name); }
       if (this.introT > 2.7) {
         this.phase = 'fight';
         this.game.input.enabled = !this.opts.demo && !this.opts.spectate;
         Audio.sfx('bell');
         this.game.hud.banner('¡LUCHA!', '#e7b53b');
+        if (this.opts.objective) this.game.hud.message('OBJETIVO: ' + this.opts.objective, true);
+        this.tipT = 6;
         this.view.excite = 0.7; Audio.cheer(1.5);
       }
     } else {
+      if (this.opts.tips && this.tipT >= 0 && this.tipI < this.opts.tips.length && !this.paused) {
+        this.tipT -= dt;
+        if (this.tipT <= 0) { this.game.hud.message('💡 ' + this.opts.tips[this.tipI++]); this.tipT = 9; }
+      }
       this.acc += simDt;
       const events: GameEvent[] = [];
       let steps = 0;
@@ -107,6 +146,7 @@ export class Battle {
         const a = this.aiP ? this.aiP.update(STEP, m) : pInput;
         const b = this.aiC.update(STEP, m);
         m.update(STEP, [a, b]);
+        if (this.opts.training) for (const f of m.f) if (f.hp < f.maxHp * 0.25) f.hp = f.maxHp; // en el entrenamiento nadie cae
         this.acc -= STEP; steps++;
         for (const e of m.events) events.push(e);
         m.events.length = 0;

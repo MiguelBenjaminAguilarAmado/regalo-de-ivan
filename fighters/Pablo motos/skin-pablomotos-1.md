@@ -1,0 +1,1 @@
+Pablo motos ha traído muchos trajes al EHW, uno de ellos siendo él disfrazado de una momia con un casco de soldado romano, esta skin lo trae devuelta

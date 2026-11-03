@@ -1,4 +1,5 @@
 import { CONFIGS } from '../../content/fighters';
+import { makeAvatar } from './avatar';
 import type { Appearance, FighterConfig, FighterData, FighterStats } from '../combat/types';
 import { getGrapple, getMove } from '../combat/moves';
 
@@ -92,6 +93,9 @@ export function buildRoster(): FighterData[] {
   const spare = ['cuchilla_dorada', 'meteoro', 'trueno_barrio', 'ciclon', 'plancha_final', 'martillo_hoyo', 'patada_fantasma', 'tornado'];
   for (const id of folders.keys()) {
     if (configs.some((c) => c.id === id)) continue;
+    // sin foto no hay luchador (p. ej. 'Big mac' espera su imagen de referencia)
+    const fo = folders.get(id)!;
+    if (!fo.main && !fo.pfp) continue;
     const cfg = autoConfig(id);
     const free = spare.find((f) => !usedFinishers.has(f));
     if (free) cfg.moves.finisher = free;
@@ -108,8 +112,8 @@ export function buildRoster(): FighterData[] {
     return {
       ...c,
       name: c.name ?? pretty(c.id),
-      portrait: f?.main ?? f?.pfp ?? null,
-      pfp: f?.pfp ?? f?.main ?? null,
+      portrait: f?.pfp ?? f?.main ?? makeAvatar(c.appearance, c.id), // solo se usa la foto de perfil (pfp); la foto completa es solo respaldo
+      pfp: f?.pfp ?? f?.main ?? makeAvatar(c.appearance, c.id),
       fullStats: { ...DEFAULT_STATS, ...c.stats },
     };
   });
@@ -118,8 +122,21 @@ export function buildRoster(): FighterData[] {
 }
 
 export const ROSTER: FighterData[] = buildRoster();
-export const fighterById = (id: string): FighterData => {
+
+/** Devuelve una copia del luchador con el traje puesto (si el traje no existe, el original). */
+export function withSkin(f: FighterData, skinId?: string | null): FighterData {
+  const skin = skinId ? f.skins?.find((s) => s.id === skinId) : undefined;
+  if (!skin) return f;
+  return { ...f, skinId: skin.id, appearance: { ...f.appearance, ...skin.appearance } };
+}
+
+let chemaHook: ((f: FighterData) => FighterData) | null = null;
+/** El mundo abierto mejora a Chema (gimnasio, equipo…): ese bono se aplica aquí para que valga en todos los modos. */
+export const setChemaHook = (h: ((f: FighterData) => FighterData) | null) => { chemaHook = h; };
+
+export const fighterById = (id: string, skinId?: string | null): FighterData => {
   const f = ROSTER.find((r) => r.id === id);
   if (!f) throw new Error(`Luchador desconocido: ${id}`);
-  return f;
+  const out = withSkin(f, skinId);
+  return id === 'chema' && chemaHook ? chemaHook(out) : out;
 };

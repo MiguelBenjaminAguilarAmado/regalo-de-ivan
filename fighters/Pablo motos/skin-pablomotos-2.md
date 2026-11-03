@@ -1,0 +1,1 @@
+Pablo motos ha traído muchos trajes al EHW, uno de ellos siendo él disfrazado de un astronauta con una máscara de alien. Este traje lo trae devuelta

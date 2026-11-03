@@ -1,5 +1,7 @@
 import type { FighterData, GameEvent, Grapple, Input, Move, WinReason } from './types';
 import { getGrapple, getMove, MOVES } from './moves';
+import { ARENA_INFO, type ArenaRules } from './arenaInfo';
+import { duoOf, type Duo } from '../content/duos';
 
 export const RING = 4.0; // medio lado del ring
 export const RING_Y = 1.0; // altura de la lona
@@ -52,7 +54,14 @@ export class Fighter {
   banned = false; // expulsado: no puede volver a entrar al ring
   toreo = false; // embestida de Pepe esquivada por Petisui
   superArmor = false;
+  /** Planchazo en curso: esquina de salida y punto de aterrizaje (se fija al saltar) */
+  dive: { cx: number; cz: number; tx: number; tz: number; launched: boolean } | null = null;
   foulCount = 0;
+  serial = 0; // número del movimiento en curso
+  /** Adrenalina: segundos restantes de bonus (una vez por combate, al bajar del 20 % de vida) */
+  boost = 0; adrenUsed = false;
+  /** Cadena de golpes seguidos conectados */
+  hits = 0; hitsT = 0;
   // estadísticas
   damageTaken = 0; damageDealt = 0; finishersLanded = 0; taunts = 0; subsApplied = 0;
   // pista visual
@@ -80,6 +89,7 @@ export class Fighter {
 }
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const smoothstep = (t: number) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 const angDiff = (a: number, b: number) => {
   let d = a - b;
   while (d > Math.PI) d -= Math.PI * 2;
@@ -88,6 +98,22 @@ const angDiff = (a: number, b: number) => {
 };
 const anyPress = (i: Input) => i.light || i.heavy || i.grab || i.taunt || i.finisher;
 export const groundY = (x: number, z: number) => (Math.abs(x) <= RING + 0.05 && Math.abs(z) <= RING + 0.05 ? RING_Y : 0);
+
+/** Miembro de la tribu de Konguito (ritual satánico): pelea por su cuenta hasta que lo tumban. Poca vida, poco daño. */
+export interface Minion {
+  id: number; owner: number;
+  x: number; z: number; yaw: number;
+  hp: number;
+  state: 'wait' | 'run' | 'dying';
+  t: number;       // tiempo en el estado actual
+  delay: number;   // espera hasta salir por la puerta
+  cd: number;      // enfriamiento del siguiente golpe
+  swing: number;   // temporizador visual del golpe
+  lastHit: number; // último golpe (serie de movimiento) que lo alcanzó, para no recibir el mismo dos veces
+}
+export const MINION_HP = 5;
+export const MOB_SIZE = 6;
+export const MAX_MINIONS = 5;
 
 export interface Referee { x: number; z: number; yaw: number; count: number; mode: 'idle' | 'count' }
 
@@ -104,15 +130,45 @@ export class Match {
   reason: WinReason | null = null;
   events: GameEvent[] = [];
   ko: { idx: number; t: number; n: number } | null = null;
+  minions: Minion[] = [];
+  /** Combates por parejas: el compañero de cada lado que espera fuera (null si no hay) */
+  bench: [Fighter | null, Fighter | null] = [null, null];
+  private tagCd = [0, 0];
+  /** Dúo dinámico de cada lado (si lo forman) */
+  duos: [Duo | null, Duo | null] = [null, null];
+  private minionSeq = 0;
+  private moveSerial = 0;
   ref: Referee = { x: 0, z: -RING + 1, yaw: 0, count: 0, mode: 'idle' };
   endT = 0;
   /** Dirección (en el plano) desde la cámara hacia el ring: el árbitro se coloca detrás de los luchadores para no tapar */
   refAway = { x: 0, z: -1 };
   rng: () => number;
+  rules: ArenaRules;
+  /** Modificadores de combate (Versus): daño, vida y momentum */
+  mod = { dmg: 1, mom: 1 };
+  /** Entrenamiento: el combate nunca termina */
+  training = false;
+  /** Límite de tiempo (s). 'hp': gana quien tenga más vida %; 'player': si aguantas, ganas (supervivencia). */
+  timeLimit: number | null = null;
+  timeMode: 'hp' | 'player' = 'hp';
+  /** Jefe con fases: al bajar de `at` de vida se enfurece (más daño y velocidad, se cura y llena el momentum). */
+  boss: { side: number; at: number; power: number; speed: number; heal: number; text: string; done: boolean } | null = null;
+  private mobCd = 0;
 
-  constructor(a: FighterData, b: FighterData, rng: () => number = Math.random) {
+  constructor(a: FighterData, b: FighterData, rng: () => number = Math.random, rules: ArenaRules = ARENA_INFO.matamoros.rules, partners: [FighterData | null, FighterData | null] = [null, null]) {
     this.rng = rng;
+    this.rules = rules;
     this.f = [new Fighter(0, a), new Fighter(1, b)];
+    if (partners[0]) this.bench[0] = new Fighter(0, partners[0]);
+    if (partners[1]) this.bench[1] = new Fighter(1, partners[1]);
+    const sides: [FighterData, FighterData] = [a, b];
+    for (let i = 0; i < 2; i++) {
+      const d = duoOf(sides[i].id, partners[i]?.id);
+      if (!d) continue;
+      this.duos[i] = d;
+      for (const fi of [this.f[i], this.bench[i]]) if (fi) fi.stats = { ...fi.stats, power: fi.stats.power * (d.bonus.power ?? 1), speed: fi.stats.speed * (d.bonus.speed ?? 1), resist: fi.stats.resist * (d.bonus.resist ?? 1) };
+      this.events.push({ type: 'duo', side: i, name: d.name, desc: d.desc });
+    }
     this.f[0].x = -1.5; this.f[0].yaw = Math.PI / 2;
     this.f[1].x = 1.5; this.f[1].yaw = -Math.PI / 2;
   }
@@ -133,20 +189,38 @@ export class Match {
     if (this.over) {
       this.endT += dt;
       for (const f of this.f) { f.t += dt; this.motion(f, dt); }
+      this.stepMinions(dt);
       this.updateRef(dt);
       return;
     }
     this.time += dt;
+    this.stepBoss();
+    if (this.timeLimit != null && this.time >= this.timeLimit) { this.endByTime(); return; }
+    if (this.rules.wind) this.stepWind(dt);
+    if (this.rules.office) this.stepOffice(dt);
+    if (this.rules.blackout) this.stepBlackout(dt);
+    this.stepTeams(dt, inputs);
     for (let i = 0; i < 2; i++) this.preUpdate(this.f[i], inputs[i], dt);
     for (let i = 0; i < 2; i++) this.step(i, inputs[i], dt);
     for (let i = 0; i < 2; i++) this.motion(this.f[i], dt);
     this.separate();
+    this.stepMinions(dt);
     this.ringRules(dt);
     this.updateKO(dt);
     this.updateRef(dt);
   }
 
   // ------------------------------------------------------------ utilidades
+  /** Altura del suelo: con ring, la lona está elevada; en escenarios sin ring todo es una explanada a la misma altura. */
+  gy(x: number, z: number) { return this.rules.ring ? groundY(x, z) : RING_Y; }
+  /** Limita un punto al recinto circular del escenario (si lo tiene). */
+  private bound(x: number, z: number): [number, number] {
+    if (this.rules.cage) { const L = RING - 0.35; return [clamp(x, -L, L), clamp(z, -L, L)]; }
+    const R = this.rules.radius;
+    if (!R) return [x, z];
+    const r = Math.hypot(x, z);
+    return r > R ? [(x * R) / r, (z * R) / r] : [x, z];
+  }
   private dist(a: Fighter, b: Fighter) { return Math.hypot(b.x - a.x, b.z - a.z); }
   private yawTo(a: Fighter, b: Fighter) { return Math.atan2(b.x - a.x, b.z - a.z); }
   private face(f: Fighter, o: Fighter, dt: number, rate: number) {
@@ -161,6 +235,13 @@ export class Match {
   // ------------------------------------------------------------ pre-update
   private preUpdate(f: Fighter, inp: Input, dt: number) {
     f.comboTimer = Math.max(0, f.comboTimer - dt);
+    f.hitsT = Math.max(0, f.hitsT - dt); if (f.hitsT <= 0) f.hits = 0;
+    f.boost = Math.max(0, f.boost - dt);
+    // adrenalina: la primera vez que bajas del 20 % de vida, unos segundos de más pegada y velocidad
+    if (!f.adrenUsed && !f.koed && f.hpPct <= 0.2) {
+      f.adrenUsed = true; f.boost = 10; f.st = Math.min(f.maxSt, f.st + 40);
+      this.emit({ type: 'adrenaline', fighter: f.idx });
+    }
     f.hitChainT = Math.max(0, f.hitChainT - dt);
     f.bufferT = Math.max(0, f.bufferT - dt);
     if (f.bufferT <= 0) f.buffer = null;
@@ -223,8 +304,9 @@ export class Match {
     if (len > 1) { mx /= len; mz /= len; }
     const moving = len > 0.15;
     f.running = moving && inp.run && !f.blocking && f.st > 6 && !f.exhausted;
-    let sp = 3.0 * f.stats.speed;
-    if (f.running) sp = 5.4 * f.stats.speed;
+    const terrain = (this.rules.slow ?? 1) * (this.blackout > 0 ? 0.85 : 1);
+    let sp = 3.0 * f.stats.speed * (f.boost > 0 ? 1.12 : 1) * terrain;
+    if (f.running) sp = 5.4 * f.stats.speed * (f.boost > 0 ? 1.12 : 1) * terrain;
     if (f.blocking) sp *= f.data.traits?.rootedGuard ? 0 : 0.42;
     if (f.exhausted) sp *= 0.7;
     const tvx = moving ? mx * sp : 0, tvz = moving ? mz * sp : 0;
@@ -234,7 +316,7 @@ export class Match {
     f.speedNow = Math.hypot(f.vx, f.vz);
 
     // salir del ring por las cuerdas: correr contra ellas
-    if (f.inRing && moving && inp.run) {
+    if (f.inRing && moving && inp.run && !this.rules.cage) {
       const ox = Math.abs(f.x) > RING - 0.55 && Math.sign(mx) === Math.sign(f.x) && Math.abs(mx) > 0.4;
       const oz = Math.abs(f.z) > RING - 0.55 && Math.sign(mz) === Math.sign(f.z) && Math.abs(mz) > 0.4;
       if (ox || oz) f.exitHold += dt; else f.exitHold = Math.max(0, f.exitHold - dt * 2);
@@ -259,8 +341,15 @@ export class Match {
     return false;
   }
 
+  private inCorner(f: Fighter) { return f.inRing && Math.abs(f.x) > RING - 1.0 && Math.abs(f.z) > RING - 1.0; }
+
   /** Golpe fuerte: si el luchador tiene lista aleatoria (Pablo Motos), elige uno según su rareza. */
   private pickHeavy(f: Fighter): Move {
+    if (f.data.traits?.cornerDive && this.inCorner(f) && f.st >= 20) {
+      const m = getMove('planchazo');
+      this.emit({ type: 'msg', text: m.announce!, big: true });
+      return m;
+    }
     const pool = f.data.moves.heavyRandom;
     if (!pool?.length) return f.heavy;
     const total = pool.reduce((a, [, w]) => a + w, 0);
@@ -295,7 +384,11 @@ export class Match {
     f.st = Math.max(0, f.st - m.stamina);
     f.superArmor = m.kind === 'finisher';
     f.toreo = false;
-    if (m.summon) this.emit({ type: 'summon', kind: m.summon, fighter: f.idx, target: 1 - f.idx, dur: f.s });
+    f.dive = m.id === 'planchazo' ? { cx: (f.x < 0 ? -1 : 1) * (RING - 0.4), cz: (f.z < 0 ? -1 : 1) * (RING - 0.4), tx: 0, tz: 0, launched: false } : null;
+    this.moveSerial++;
+    f.serial = this.moveSerial;
+    if (m.summon === 'tribu') this.spawnTribe(f, m);
+    else if (m.summon) this.emit({ type: 'summon', kind: m.summon, fighter: f.idx, target: 1 - f.idx, dur: f.s });
     if (m.kind === 'finisher') { f.mom = 0; this.emit({ type: 'finisherStart', fighter: f.idx, move: m }); }
   }
 
@@ -304,6 +397,7 @@ export class Match {
     f.vx *= 0.8; f.vz *= 0.8;
     f.speedNow = 0;
     if (f.t < f.s) this.face(f, o, dt, m.kind === 'finisher' ? 3 : 7);
+    if (f.dive && this.stepDive(f, o, m, dt)) return;
     if (m.lunge && f.t < f.s + f.a) {
       const sp = m.lunge * (m.kind === 'finisher' ? 1 : 1);
       f.x += Math.sin(f.yaw) * sp * dt * (f.t > f.s * 0.35 ? 1 : 0.2);
@@ -333,8 +427,11 @@ export class Match {
         return;
       }
     }
+    if (this.rules.mob) this.checkMob(f, m);
+    // los golpes también alcanzan a la tribu rival
+    if (f.t >= f.s && f.t <= f.s + f.a + 0.03 && (m.kind === 'strike' || m.kind === 'finisher') && !f.dive) this.hitMinions(f, m.range * 1.05, m.damage);
     // ventana activa
-    if (!f.hitDone && f.t >= f.s && f.t <= f.s + f.a + 0.03 && !f.toreo) {
+    if (!f.hitDone && f.t >= f.s && f.t <= f.s + f.a + 0.03 && !f.toreo && !f.dive) {
       if (f.t - dt < f.s && m.kind !== 'taunt') this.emit({ type: 'whoosh', fighter: f.idx });
       this.resolve(f, o, m);
     }
@@ -366,6 +463,46 @@ export class Match {
     }
     if (inp.block && f.t >= f.s + f.a + f.r * 0.6 && m.kind !== 'finisher') { f.state = 'idle'; f.move = null; return; }
     if (f.t >= total) { f.state = 'idle'; f.move = null; f.superArmor = false; }
+  }
+
+  /** Planchazo desde el poste: trepa durante el arranque, fija el blanco al saltar (se puede esquivar) y aterroriza el ring.
+   *  Devuelve true mientras controla el movimiento (el resto de stepAttack se salta). */
+  private stepDive(f: Fighter, o: Fighter, m: Move, dt: number): boolean {
+    const d = f.dive!;
+    const end = f.s + f.a;
+    if (f.t < f.s) {
+      // sube al poste: se coloca en la esquina y trepa
+      const k = 1 - Math.exp(-9 * dt);
+      f.x += (d.cx - f.x) * k; f.z += (d.cz - f.z) * k;
+      f.y = RING_Y + 1.25 * smoothstep((f.t - 0.15) / Math.max(0.2, f.s - 0.35));
+      return true;
+    }
+    if (f.t < end) {
+      if (!d.launched) { d.launched = true; d.tx = o.x; d.tz = o.z; this.emit({ type: 'whoosh', fighter: f.idx }); }
+      const u = clamp((f.t - f.s) / f.a, 0, 1);
+      f.x = d.cx + (d.tx - d.cx) * u; f.z = d.cz + (d.tz - d.cz) * u;
+      f.y = RING_Y + 1.25 * (1 - u) + 0.7 * Math.sin(Math.PI * u) * (1 - u);
+      f.yaw = Math.atan2(d.tx - d.cx, d.tz - d.cz);
+      return true;
+    }
+    if (!f.hitDone) {
+      // aterriza: tiembla el suelo
+      f.hitDone = true;
+      f.y = RING_Y;
+      f.x = d.tx; f.z = d.tz;
+      const dist = this.dist(f, o);
+      const direct = dist < m.range && this.hittable(o);
+      this.emit({ type: 'quake', fighter: f.idx, x: f.x, z: f.z, direct });
+      this.hitMinions(f, 2.4, 99);
+      if (direct) {
+        f.connected = true;
+        this.applyHit(f, o, m);
+      } else if (dist < 2.6 && this.hittable(o) && !o.superArmor) {
+        // el temblor lo desequilibra aunque no le dé de lleno
+        o.state = 'stunned'; o.t = 0; o.dur = 0.7; o.move = null; o.blocking = false;
+      }
+    }
+    return false;
   }
 
   // ------------------------------------------------------------ resolución de golpes
@@ -436,23 +573,41 @@ export class Match {
   private applyHit(f: Fighter, o: Fighter, m: Move) {
     const dx = o.x - f.x, dz = o.z - f.z, dd = Math.hypot(dx, dz) || 1;
     const nx = dx / dd, nz = dz / dd;
-    let dmg = m.damage * (m.kind === 'finisher' ? FINISHER_SCALE : DMG_SCALE) * f.stats.power * (f.exhausted ? 0.75 : 1) * o.stats.resist;
+    const lowHp = o.hp / o.maxHp <= 0.15; // para el finisher de Pablo Motos
+    let dmg = m.damage * (m.kind === 'finisher' ? FINISHER_SCALE : DMG_SCALE) * f.stats.power * (f.exhausted ? 0.75 : 1) * (f.boost > 0 ? 1.2 : 1) * o.stats.resist * this.mod.dmg;
     if (o.state === 'attack' && o.t < o.s && o.move?.kind !== 'finisher') dmg *= 1.2; // golpe al contraataque
     if (m.foul) {
       dmg *= 1.2;
       f.foulCount++;
-      const seen = this.rng() < 0.45;
+      const seen = this.rules.refSees && this.rng() < 0.45;
       this.emit({ type: 'foul', fighter: f.idx, seen });
       if (seen) f.mom = Math.max(0, f.mom - 12);
     }
-    o.hp = Math.max(0, o.hp - dmg);
+    // el ritual satánico no mata: te deja al borde, pero la tribu no te remata
+    o.hp = Math.max(m.id === 'ritual_satanico' ? 1 : 0, o.hp - dmg);
     o.damageTaken += dmg; f.damageDealt += dmg;
     const wasReady = f.mom >= 100;
-    f.mom = Math.min(100, f.mom + m.momentum);
-    o.mom = Math.min(100, o.mom + dmg * 0.35);
+    const momMul = this.mod.mom * (this.blackout > 0 ? 1.5 : 1);
+    f.mom = Math.min(100, f.mom + m.momentum * momMul);
+    o.mom = Math.min(100, o.mom + dmg * 0.35 * momMul);
     if (!wasReady && f.mom >= 100) this.emit({ type: 'ready', fighter: f.idx });
     if (o.mom >= 100 && o.mom - dmg * 0.35 < 100) this.emit({ type: 'ready', fighter: o.idx });
 
+    // jaula de acero: un golpe fuerte que lo estampa contra la reja hace daño extra
+    if (this.rules.cage && m.knockback >= 0.8 && m.kind !== 'taunt') {
+      const edge = Math.max(Math.abs(o.x), Math.abs(o.z));
+      const out = Math.abs(o.x) > Math.abs(o.z) ? nx * Math.sign(o.x) : nz * Math.sign(o.z);
+      if (edge > RING - 0.75 && out > 0.25) {
+        const extra = 3.2 * o.stats.resist;
+        o.hp = Math.max(1, o.hp - extra); o.damageTaken += extra; f.damageDealt += extra;
+        this.emit({ type: 'cage', x: o.x, z: o.z });
+      }
+    }
+    // empujar al rival contra el público: la tribu se enfada con quien pega
+    if (this.rules.mob && m.knockback > 0) {
+      const R = this.rules.radius ?? 7, r = Math.hypot(o.x, o.z);
+      if (r > R - 0.8 && (nx * o.x + nz * o.z) / (r || 1) > 0.4) this.spawnMob(f);
+    }
     const mid = { x: (f.x + o.x) / 2, y: o.y + 1.35, z: (f.z + o.z) / 2 };
     const isFin = m.kind === 'finisher';
 
@@ -468,12 +623,17 @@ export class Match {
       this.emit({ type: 'hit', target: o.idx, attacker: f.idx, heavy: m.damage >= 10, x: mid.x, y: mid.y, z: mid.z, dmg });
     }
 
-    if (m.id === 'hora_pablo_motos') { this.fire(f, o); return; }
+    // combo: golpes seguidos del mismo luchador
+    f.hits = f.hitsT > 0 ? f.hits + 1 : 1; f.hitsT = 1.4;
+    if (f.hits >= 3) this.emit({ type: 'combo', fighter: f.idx, n: f.hits });
+    if (f.hits === 5) f.mom = Math.min(100, f.mom + 10); // premio por un combo de 5
+
+    if (m.id === 'hora_pablo_motos') { if (lowHp && !this.benchAlive(o.idx)) this.fire(f, o); else this.throwOut(f, o); return; }
 
     // el rival tiene super armadura (está ejecutando su finisher)
     if (o.superArmor && !isFin) return;
 
-    if (o.hp <= 0) { this.knockDown(o, f, m, nx, nz, true); this.startKO(o, f); return; }
+    if (o.hp <= 0) { this.downed(o, f, m, nx, nz); return; }
     if (knockdown) { this.knockDown(o, f, m, nx, nz, false); return; }
     o.state = 'hitstun'; o.t = 0; o.dur = m.hitstun; o.move = null; o.blocking = false;
     o.hitFlip = -o.hitFlip;
@@ -493,11 +653,24 @@ export class Match {
     this.emit({ type: 'msg', text: '¡' + o.data.name + ' ha sido DESPEDIDO!', big: true });
   }
 
+  /** La hora de Pablo Motos con el rival aún entero: lo lanza fuera del ring, le hace algo de daño, pero se recupera. */
+  private throwOut(f: Fighter, o: Fighter) {
+    o.hp = Math.max(1, o.hp);
+    o.move = null; o.blocking = false; o.superArmor = false;
+    let dx = o.x, dz = o.z;
+    const l = Math.hypot(dx, dz);
+    if (l < 0.8) { dx = Math.sin(f.yaw); dz = Math.cos(f.yaw); } else { dx /= l; dz /= l; }
+    const k = (RING + 2.6) / Math.max(Math.abs(dx), Math.abs(dz));
+    const tx = clamp(dx * k, -FLOOR_LIM, FLOOR_LIM), tz = clamp(dz * k, -FLOOR_LIM, FLOOR_LIM);
+    this.startThrow(o, f, tx, tz, 1.0, 2.2, 'throw', 3 * o.stats.resist, true);
+    this.emit({ type: 'msg', text: '¡' + o.data.name + ' sale despedido por los aires!', big: true });
+  }
+
   private knockDown(o: Fighter, f: Fighter, m: Move, nx: number, nz: number, ko: boolean) {
     o.move = null; o.blocking = false; o.hitChain = 0;
     const isFin = m.kind === 'finisher';
     // salir volando del ring
-    if (m.sendOut && o.inRing && !ko) {
+    if (m.sendOut && o.inRing && !ko && !this.rules.cage) {
       const edgeX = nx > 0.2 ? RING - o.x : nx < -0.2 ? RING + o.x : 99;
       const edgeZ = nz > 0.2 ? RING - o.z : nz < -0.2 ? RING + o.z : 99;
       const toEdge = Math.min(Math.abs(nx) > 0.2 ? edgeX / Math.abs(nx) : 99, Math.abs(nz) > 0.2 ? edgeZ / Math.abs(nz) : 99);
@@ -568,10 +741,11 @@ export class Match {
     else { tx = a.x + Math.sin(a.yaw) * 1.0; tz = a.z + Math.cos(a.yaw) * 1.0; }
     tx = clamp(tx, -bounds, bounds); tz = clamp(tz, -bounds, bounds);
     a.state = 'throwing'; a.t = 0; a.dur = g.style === 'throw' ? 0.85 : 0.95;
-    this.startThrow(d, a, tx, tz, g.style === 'throw' ? 0.7 : 0.85, g.style === 'throw' ? 1.2 : 1.9, g.style, g.damage * DMG_SCALE * a.stats.power * d.stats.resist, false);
+    this.startThrow(d, a, tx, tz, g.style === 'throw' ? 0.7 : 0.85, g.style === 'throw' ? 1.2 : 1.9, g.style, g.damage * DMG_SCALE * a.stats.power * d.stats.resist * this.mod.dmg, false);
   }
 
   private startThrow(d: Fighter, by: Fighter, tx: number, tz: number, dur: number, arc: number, style: 'throw' | 'slam', dmg: number, out: boolean) {
+    [tx, tz] = this.bound(tx, tz);
     d.state = 'thrown'; d.t = 0; d.move = null; d.blocking = false;
     d.thrown = { fx: d.x, fz: d.z, tx, tz, dur, arc, style, dmg, by: by.idx, out };
     d.kbx = d.kbz = 0;
@@ -584,7 +758,7 @@ export class Match {
     const e = th.style === 'slam' ? s : 1 - (1 - s) * (1 - s);
     d.x = th.fx + (th.tx - th.fx) * e;
     d.z = th.fz + (th.tz - th.fz) * e;
-    const y0 = groundY(th.fx, th.fz), y1 = groundY(th.tx, th.tz);
+    const y0 = this.gy(th.fx, th.fz), y1 = this.gy(th.tx, th.tz);
     d.y = y0 + (y1 - y0) * s + th.arc * 4 * s * (1 - s);
     if (s >= 1) {
       d.thrown = null;
@@ -597,11 +771,242 @@ export class Match {
         d.mom = Math.min(100, d.mom + th.dmg * 0.4);
         if (a.mom >= 100) this.emit({ type: 'ready', fighter: a.idx });
       }
+      if (this.rules.mob && Math.hypot(d.x, d.z) > (this.rules.radius ?? 7) - 0.5) this.spawnMob(a); // lo lanzaste contra la tribu
       this.emit({ type: 'land', target: d.idx, big: th.style === 'slam' || th.out });
       d.state = 'down'; d.t = 0;
       d.dur = (1.8 + 1.5 * (1 - d.hpPct)) * d.stats.recover;
-      d.inRing = Math.abs(d.x) <= RING - 0.4 && Math.abs(d.z) <= RING - 0.4;
-      if (d.hp <= 0) this.startKO(d, a);
+      d.inRing = this.rules.ring && Math.abs(d.x) <= RING - 0.4 && Math.abs(d.z) <= RING - 0.4;
+      if (d.hp <= 0) this.downed(d, a);
+    }
+  }
+
+  /** Se acabó el tiempo: decide la vida restante (o, en supervivencia, aguantar ya es ganar). */
+  private endByTime() {
+    const [a, b] = this.f;
+    let winner: number;
+    if (this.timeMode === 'player') winner = a.hp > 0 ? 0 : 1;
+    else winner = a.hpPct >= b.hpPct ? 0 : 1;
+    this.end(winner, 'tiempo');
+  }
+
+  private stepBoss() {
+    const bs = this.boss;
+    if (!bs || bs.done) return;
+    const f = this.f[bs.side];
+    if (f.hpPct > bs.at || f.hp <= 0) return;
+    bs.done = true;
+    f.stats = { ...f.stats, power: f.stats.power * bs.power, speed: f.stats.speed * bs.speed, tempo: f.stats.tempo * 1.08 };
+    f.hp = Math.min(f.maxHp, f.hp + bs.heal * f.maxHp);
+    f.mom = 100; f.boost = Math.max(f.boost, 8); f.adrenUsed = true;
+    this.emit({ type: 'phase', side: bs.side, text: bs.text });
+  }
+
+  // ------------------------------------------------------------ oficina de Pablo Motos
+  private officeCd = 22;
+  /** Pablo Motos lanza un maletín de billetes al que va perdiendo: algo de vida y momentum. */
+  private stepOffice(dt: number) {
+    this.officeCd -= dt;
+    if (this.officeCd > 0) return;
+    this.officeCd = 24 + this.rng() * 10;
+    const [a, b] = this.f;
+    const w = a.hpPct <= b.hpPct ? a : b;
+    if (w.hp <= 0 || w.state === 'ko') return;
+    w.hp = Math.min(w.maxHp, w.hp + 0.1 * w.maxHp);
+    w.mom = Math.min(100, w.mom + 15);
+    this.emit({ type: 'bonus', side: w.idx, text: '¡Pablo Motos lanza un maletín a ' + w.data.name + '!' });
+  }
+
+  // ------------------------------------------------------------ apagones (Estadio de Santiago)
+  private blackoutCd = 16;
+  blackout = 0;
+  private stepBlackout(dt: number) {
+    if (this.blackout > 0) {
+      this.blackout -= dt;
+      if (this.blackout <= 0) { this.blackout = 0; this.emit({ type: 'blackout', on: false }); this.emit({ type: 'msg', text: 'Vuelve la luz' }); }
+      return;
+    }
+    this.blackoutCd -= dt;
+    if (this.blackoutCd <= 0) { this.blackoutCd = 20 + this.rng() * 10; this.blackout = 2.8; this.emit({ type: 'blackout', on: true }); this.emit({ type: 'msg', text: '¡Apagón!', big: true }); }
+  }
+
+  // ------------------------------------------------------------ viento (Azotea)
+  private windCd = 9;
+  private gust: { t: number; dx: number; dz: number } | null = null;
+
+  private stepWind(dt: number) {
+    if (!this.gust) {
+      this.windCd -= dt;
+      if (this.windCd <= 0) {
+        const a = this.rng() * Math.PI * 2;
+        this.gust = { t: 1.8, dx: Math.cos(a), dz: Math.sin(a) };
+        this.windCd = 13 + this.rng() * 9;
+        this.emit({ type: 'gust', dx: this.gust.dx, dz: this.gust.dz });
+        this.emit({ type: 'msg', text: '¡Ráfaga de viento!' });
+      }
+      return;
+    }
+    const g = this.gust;
+    for (const f of this.f) {
+      if (!['idle', 'block', 'attack', 'hitstun', 'stunned', 'down', 'getup'].includes(f.state)) continue;
+      f.kbx += g.dx * 20 * dt; f.kbz += g.dz * 20 * dt;
+    }
+    g.t -= dt;
+    if (g.t <= 0) this.gust = null;
+  }
+
+  // ------------------------------------------------------------ parejas (relevos)
+  private benchAlive(side: number) { const b = this.bench[side]; return !!b && b.hp > 0; }
+
+  private stepTeams(dt: number, inputs: [Input, Input]) {
+    for (let i = 0; i < 2; i++) {
+      this.tagCd[i] = Math.max(0, this.tagCd[i] - dt);
+      const b = this.bench[i];
+      const rg = this.duos[i]?.bonus.regen ?? 1;
+      if (b && b.hp > 0) { b.hp = Math.min(b.maxHp, b.hp + 1.6 * rg * dt); b.st = Math.min(b.maxSt, b.st + 22 * rg * dt); }
+      if (inputs[i].tag) this.tryTag(i, false);
+    }
+  }
+
+  /** Relevo: el compañero entra en el sitio del que estaba luchando. */
+  tryTag(side: number, forced: boolean): boolean {
+    const out = this.f[side], inn = this.bench[side];
+    if (!inn || inn.hp <= 0) return false;
+    if (!forced) {
+      if (this.tagCd[side] > 0 || (out.state !== 'idle' && out.state !== 'block')) return false;
+    }
+    inn.x = out.x; inn.z = out.z; inn.y = out.y; inn.yaw = out.yaw; inn.vx = inn.vz = inn.kbx = inn.kbz = 0;
+    inn.inRing = out.inRing; inn.outT = 0; inn.outN = 0;
+    inn.state = 'idle'; inn.t = 0; inn.move = null; inn.blocking = false; inn.superArmor = false; inn.exhausted = false;
+    inn.mom = Math.max(inn.mom, out.mom); // el momentum es del equipo
+    for (const k of ['damageTaken', 'damageDealt', 'finishersLanded', 'taunts', 'subsApplied'] as const) { inn[k] += out[k]; out[k] = 0; }
+    this.f[side] = inn;
+    this.bench[side] = out;
+    out.vx = out.vz = 0; out.blocking = false; out.move = null; out.superArmor = false;
+    if (forced) { out.state = 'down'; out.koed = true; out.dur = 9999; } else out.state = 'idle';
+    this.tagCd[side] = 2.5 * (this.duos[side]?.bonus.tagCd ?? 1);
+    const duo = this.duos[side];
+    if (duo?.bonus.entryBoost) inn.boost = Math.max(inn.boost, duo.bonus.entryBoost);
+    if (duo?.bonus.entryMom) inn.mom = Math.min(100, inn.mom + duo.bonus.entryMom);
+    this.emit({ type: 'tag', side, out: out.data.name, inn: inn.data.name, forced });
+    return true;
+  }
+
+  /** Un luchador sin vida: si su compañero puede seguir, entra en su lugar; si no, cuenta de KO. */
+  private downed(o: Fighter, by: Fighter, m?: Move, nx = 0, nz = 0) {
+    if (this.benchAlive(o.idx)) { o.hp = 0; this.tryTag(o.idx, true); return; }
+    if (m) this.knockDown(o, by, m, nx, nz, true);
+    this.startKO(o, by);
+  }
+
+  // ------------------------------------------------------------ tribu de Konguito
+  /** Ritual satánico: aparece la puerta (la dibuja Summons) y salen 5 de la tribu. Si ya había tribu, se repone (máx. 5). */
+  private spawnTribe(f: Fighter, m: Move) {
+    const o = this.f[1 - f.idx];
+    for (const mi of this.minions) if (mi.owner === f.idx && mi.state !== 'dying') { mi.state = 'dying'; mi.t = 0; }
+    // la puerta se coloca detrás del rival respecto a la cámara, para no taparle la vista
+    const lim = FLOOR_LIM - 0.6;
+    const dx = clamp(o.x + this.refAway.x * 3.2, -lim, lim), dz = clamp(o.z + this.refAway.z * 3.2, -lim, lim);
+    this.emit({ type: 'summon', kind: 'tribu', fighter: f.idx, target: o.idx, dur: f.s, x: dx, z: dz });
+    void m;
+    for (let i = 0; i < MAX_MINIONS; i++) {
+      const jitter = (this.rng() - 0.5) * 0.5;
+      this.minions.push({
+        id: ++this.minionSeq, owner: f.idx, x: dx + jitter, z: dz + (i - 2) * 0.12, yaw: 0, hp: MINION_HP, state: 'wait',
+        t: 0, delay: 0.7 + i * 0.16, cd: 0.9 + i * 0.3 + this.rng() * 0.4, swing: 0, lastHit: 0,
+      });
+    }
+  }
+
+  /** Tribu de Kongui: si golpeas hacia el público (que es la tribu), se te echan encima. */
+  private checkMob(f: Fighter, m: Move) {
+    if ((m.kind !== 'strike' && m.kind !== 'finisher') || f.t < f.s || f.t > f.s + f.a + 0.03) return;
+    if (this.mobCd > 0) return;
+    // el golpe acaba en el público si el punto de impacto queda más allá del recinto
+    const R = this.rules.radius ?? 7;
+    const reach = m.range * 0.8;
+    const px = f.x + Math.sin(f.yaw) * reach, pz = f.z + Math.cos(f.yaw) * reach;
+    if (Math.hypot(px, pz) > R + 0.2) this.spawnMob(f);
+  }
+
+  private spawnMob(offender: Fighter) {
+    if (offender.data.id === 'kongui') return; // Konguito es de la tribu: a él no lo atacan
+    if (this.mobCd > 0) return;
+    const owner = 1 - offender.idx;
+    if (this.minions.some((mi) => mi.owner === owner && mi.state !== 'dying')) return;
+    this.mobCd = 12;
+    const R = (this.rules.radius ?? 7) + 1.1;
+    const base = Math.atan2(offender.z, offender.x);
+    for (let i = 0; i < MOB_SIZE; i++) {
+      const a = base + (i - (MOB_SIZE - 1) / 2) * 0.28;
+      this.minions.push({
+        id: ++this.minionSeq, owner, x: Math.cos(a) * R, z: Math.sin(a) * R, yaw: 0, hp: MINION_HP, state: 'wait',
+        t: 0, delay: 0.2 + i * 0.12, cd: 0.8 + i * 0.25 + this.rng() * 0.4, swing: 0, lastHit: 0,
+      });
+    }
+    this.emit({ type: 'mob', target: offender.idx });
+    this.emit({ type: 'msg', text: '¡' + offender.data.name + ' ha golpeado a uno de la tribu! ¡TE ATACAN TODOS!', big: true });
+  }
+
+  private stepMinions(dt: number) {
+    this.mobCd = Math.max(0, this.mobCd - dt);
+    if (!this.minions.length) return;
+    for (const mi of this.minions) {
+      mi.t += dt;
+      if (mi.state === 'dying') continue;
+      if (mi.state === 'wait') { mi.delay -= dt; if (mi.delay <= 0) { mi.state = 'run'; mi.t = 0; } continue; }
+      mi.swing = Math.max(0, mi.swing - dt);
+      const o = this.f[1 - mi.owner];
+      const dx = o.x - mi.x, dz = o.z - mi.z, d = Math.hypot(dx, dz) || 1;
+      mi.yaw = Math.atan2(dx, dz);
+      if (d > 1.0) {
+        const sp = 3.6 * dt;
+        mi.x += (dx / d) * sp; mi.z += (dz / d) * sp;
+      } else {
+        mi.cd -= dt;
+        if (mi.cd <= 0 && this.hittable(o)) { this.minionHit(mi, o); mi.cd = 1.5 + this.rng() * 0.7; }
+      }
+      // no se amontonan
+      for (const other of this.minions) {
+        if (other === mi || other.state !== 'run') continue;
+        const ex = mi.x - other.x, ez = mi.z - other.z, ed = Math.hypot(ex, ez);
+        if (ed < 0.6 && ed > 0.001) { const push = (0.6 - ed) * 0.5; mi.x += (ex / ed) * push; mi.z += (ez / ed) * push; }
+      }
+      mi.x = clamp(mi.x, -FLOOR_LIM, FLOOR_LIM); mi.z = clamp(mi.z, -FLOOR_LIM, FLOOR_LIM);
+    }
+    this.minions = this.minions.filter((mi) => !(mi.state === 'dying' && mi.t > 1.0));
+  }
+
+  /** Golpe de un miembro de la tribu: poco daño, sin hitstun ni cadena de golpes, y nunca remata (deja 1 de vida). */
+  private minionHit(mi: Minion, o: Fighter) {
+    mi.swing = 0.3;
+    const owner = this.f[mi.owner];
+    let dmg = 1.7 * o.stats.resist;
+    const mid = { x: (mi.x + o.x) / 2, y: o.y + 1.2, z: (mi.z + o.z) / 2 };
+    const facing = Math.abs(angDiff(Math.atan2(mi.x - o.x, mi.z - o.z), o.yaw)) < 1.3;
+    if (o.blocking && o.state === 'block' && facing) {
+      dmg *= 0.15;
+      o.st = Math.max(0, o.st - 3);
+      this.emit({ type: 'block', target: o.idx, x: mid.x, y: mid.y, z: mid.z, perfect: false });
+    } else {
+      this.emit({ type: 'hit', target: o.idx, attacker: owner.idx, heavy: false, x: mid.x, y: mid.y, z: mid.z, dmg });
+      const dx = o.x - mi.x, dz = o.z - mi.z, dd = Math.hypot(dx, dz) || 1;
+      o.kbx += (dx / dd) * 1.2; o.kbz += (dz / dd) * 1.2; // un empujoncito, no un aturdimiento
+    }
+    o.hp = Math.max(1, o.hp - dmg);
+    o.damageTaken += dmg; owner.damageDealt += dmg;
+    o.mom = Math.min(100, o.mom + dmg * 0.35);
+  }
+
+  /** Daño de un luchador a la tribu rival dentro de `range` (sin cono: pegas a quien tengas cerca). */
+  private hitMinions(f: Fighter, range: number, dmg: number) {
+    for (const mi of this.minions) {
+      if (mi.owner === f.idx || mi.state !== 'run' || mi.lastHit === f.serial) continue;
+      if (Math.hypot(mi.x - f.x, mi.z - f.z) > range) continue;
+      mi.lastHit = f.serial;
+      mi.hp -= dmg;
+      const dead = mi.hp <= 0;
+      if (dead) { mi.state = 'dying'; mi.t = 0; }
+      this.emit({ type: 'minionHit', id: mi.id, x: mi.x, z: mi.z, dead });
     }
   }
 
@@ -624,7 +1029,14 @@ export class Match {
 
   private stepPin(d: Fighter, a: Fighter, inp: Input, dt: number) {
     if (a.state !== 'pinA') { d.state = 'down'; d.t = 0; d.dur = 0.8; return; }
-    d.pinT += dt;
+    d.pinT += dt * (this.rules.fastPin ?? 1);
+    // las cuerdas: si el pin está pegado a ellas, el árbitro lo rompe
+    if (this.rules.ropeBreak && d.pinT > 0.5 && d.inRing && Math.max(Math.abs(d.x), Math.abs(d.z)) > RING - 0.75) {
+      this.emit({ type: 'msg', text: '¡Rope break! ' + d.data.name + ' agarra las cuerdas', big: true });
+      d.state = 'down'; d.t = 0; d.dur = 0.8;
+      a.state = 'stunned'; a.t = 0; a.dur = 0.6;
+      return;
+    }
     d.escape = Math.max(0, d.escape - 0.12 * dt);
     if (anyPress(inp)) d.escape += 0.2 * (0.25 + d.hpPct) * d.stats.escape;
     const n = Math.min(3, Math.floor(d.pinT));
@@ -695,10 +1107,12 @@ export class Match {
         f.x = clamp(f.x, -lim, lim); f.z = clamp(f.z, -lim, lim);
       }
       f.x = clamp(f.x, -FLOOR_LIM, FLOOR_LIM); f.z = clamp(f.z, -FLOOR_LIM, FLOOR_LIM);
+      [f.x, f.z] = this.bound(f.x, f.z);
       if (f.inRing && (Math.abs(f.x) > RING + 0.05 || Math.abs(f.z) > RING + 0.05)) f.inRing = false;
       else if (!f.inRing && Math.abs(f.x) < RING - 0.4 && Math.abs(f.z) < RING - 0.4) f.inRing = true;
-      const gy = groundY(f.x, f.z);
-      f.y += (gy - f.y) * (1 - Math.exp(-10 * dt));
+      if (!this.rules.ring) f.inRing = false;
+      const diving = f.state === 'attack' && !!f.dive && f.t < f.s + f.a;
+      if (!diving) { const gy = this.gy(f.x, f.z); f.y += (gy - f.y) * (1 - Math.exp(-10 * dt)); }
     } else {
       if (Math.abs(f.x) > RING + 0.05 || Math.abs(f.z) > RING + 0.05) f.inRing = false;
     }
@@ -720,6 +1134,7 @@ export class Match {
   }
 
   private ringRules(dt: number) {
+    if (!this.rules.countOut || !this.rules.ring) { for (const f of this.f) { f.outT = 0; f.outN = 0; } return; }
     for (const f of this.f) {
       const outside = Math.abs(f.x) > RING + 0.05 || Math.abs(f.z) > RING + 0.05;
       if (outside && f.state !== 'thrown') {
@@ -770,6 +1185,13 @@ export class Match {
 
   private end(winner: number, reason: WinReason) {
     if (this.over) return;
+    if (this.training) {
+      // en el entrenamiento nadie gana: se levantan y se sigue practicando
+      for (const f of this.f) { f.state = 'idle'; f.t = 0; f.move = null; f.blocking = false; f.koed = false; f.hp = f.maxHp; f.banned = false; f.outT = 0; f.outN = 0; f.vx = f.vz = 0; }
+      this.ko = null;
+      this.emit({ type: 'msg', text: 'Entrenamiento: ¡otra vez!' });
+      return;
+    }
     this.over = true;
     this.winner = winner;
     this.reason = reason;
@@ -777,6 +1199,7 @@ export class Match {
     w.state = 'win'; w.t = 0; w.move = null; w.blocking = false; w.vx = w.vz = 0;
     if (l.state !== 'down' && l.state !== 'pinD') { l.state = 'ko'; } else l.state = 'ko';
     l.t = 0; l.move = null; l.blocking = false; l.vx = l.vz = 0;
+    for (const mi of this.minions) if (mi.state !== 'dying') { mi.state = 'dying'; mi.t = 0; }
     this.emit({ type: 'end', winner, reason });
   }
 }

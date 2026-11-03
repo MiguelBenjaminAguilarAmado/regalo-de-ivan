@@ -25,12 +25,12 @@ export class Crowd {
   private flashMat: THREE.ShaderMaterial;
   count = 0;
 
-  constructor(seats: Seat[], palette: number[], opts: { near?: (s: Seat) => boolean; seed?: number; flashes?: number } = {}) {
+  constructor(seats: Seat[], palette: number[], opts: { near?: (s: Seat) => boolean; seed?: number; flashes?: number; skins?: number[] } = {}) {
     const rnd = rngSeed(opts.seed ?? 7);
     const near = opts.near ?? (() => false);
     const hi = seats.filter(near), lo = seats.filter((s) => !near(s));
     this.count = seats.length;
-    const skins = [0xf1c8a5, 0xd9a27a, 0xb97d56, 0x8d5a3b, 0x6b4128, 0xe8b890].map((c) => new THREE.Color(c));
+    const skins = (opts.skins ?? [0xf1c8a5, 0xd9a27a, 0xb97d56, 0x8d5a3b, 0x6b4128, 0xe8b890]).map((c) => new THREE.Color(c));
     const pal = palette.map((c) => new THREE.Color(c));
 
     const make = (list: Seat[], detail: 'hi' | 'lo') => {

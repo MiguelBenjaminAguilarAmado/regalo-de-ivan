@@ -1,0 +1,7 @@
+Big Boom es un luchador contratado por Pablo Motos para formar parte de la plantilla de El Hoyo Wrestling[1]. En sus inicios en la empresa destacó por hacer equipo junto a su inseparable compañero Big Justice. Sin embargo, tras un polémico combate en desventaja de dos contra uno frente a Konguito (Kongi), la dirección de la empresa decidió despedir a ambos[2]. A pesar de su despido y los altibajos en la promoción, Big Boom regresó a la escena principal para disputar combates de gran calibre en eventos estelares como *Bolas en Fuego*, donde fue programado para medirse cara a cara contra el mismísimo campeón Elso[1].
+
+Su estilo de combate se basa en el impacto contundente y la combinación de fuerza bruta junto a Big Justice. Posee una resistencia física alta que le permite absorber castigo antes de caer, buscando siempre abrumar al rival con la presión constante y la presencia en el ring, aunque a menudo recurre a la interferencia o al trabajo en equipo no reglamentario.
+
+En cuanto a su apariencia física y vestimenta, se caracteriza por su figura imponente y voluminosa, destacando por hacer su entrada flanqueado siempre por Big Justice para causar el máximo impacto visual ante el público[1].
+
+Su finisher es "El Impacto Boom", donde aprovecha todo su peso e inercia corporal para ejecutar un golpe devastador en embestida directa que deja a su rival tendido sobre la lona sin opción de levantarse.

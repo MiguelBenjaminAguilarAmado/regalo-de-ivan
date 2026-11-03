@@ -25,8 +25,8 @@ export class Summons {
     return { sx, sz };
   }
 
-  spawn(kind: 'momia' | 'tanque', owner: number, target: number, dur: number) {
-    if (kind === 'momia') this.mummy(owner, target, dur); else this.tank(owner, target, dur);
+  spawn(kind: 'momia' | 'tanque' | 'tribu', owner: number, target: number, dur: number, x = 0, z = 0) {
+    if (kind === 'momia') this.mummy(owner, target, dur); else if (kind === 'tanque') this.tank(owner, target, dur); else this.tribe(dur, x, z, target);
   }
 
   private mummy(owner: number, target: number, dur: number) {
@@ -70,6 +70,43 @@ export class Summons {
         return true;
       },
       dispose: () => m.dispose(),
+    });
+  }
+
+  /** Ritual satánico de Konguito: aparece una puerta que se abre con luz roja. La tribu que sale de ella
+   *  son los `minions` de Match (se dibujan en MinionView), no un efecto visual. */
+  private tribe(dur: number, x: number, z: number, targetIdx: number) {
+    const [a, b] = this.fighters();
+    const tgt = targetIdx === 0 ? a : b;
+    const root = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: 0x3a2414, roughness: 0.85 });
+    const void_ = new THREE.MeshStandardMaterial({ color: 0x050202, roughness: 1 });
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material, px: number, py: number, pz: number, parent: THREE.Object3D = root) => { const m = new THREE.Mesh(geo, mat); m.position.set(px, py, pz); m.castShadow = true; parent.add(m); return m; };
+    add(new THREE.BoxGeometry(1.5, 2.5, 0.12), void_, 0, 1.25, 0);
+    add(new THREE.BoxGeometry(0.14, 2.6, 0.2), wood, -0.8, 1.3, 0); add(new THREE.BoxGeometry(0.14, 2.6, 0.2), wood, 0.8, 1.3, 0);
+    add(new THREE.BoxGeometry(1.74, 0.14, 0.2), wood, 0, 2.55, 0);
+    const hinge = new THREE.Group(); hinge.position.set(-0.72, 0, 0.05); root.add(hinge);
+    add(new THREE.BoxGeometry(1.44, 2.4, 0.07), wood, 0.72, 1.25, 0, hinge);
+    const glow = new THREE.PointLight(0xff5030, 0, 9, 1.5); glow.position.set(0, 1.4, 0.5); root.add(glow);
+    root.position.set(x, tgt.y, z);
+    root.rotation.y = Math.atan2(tgt.x - x, tgt.z - z);
+    root.scale.setScalar(0.01);
+    this.group.add(root);
+    this.fx.dust(x, tgt.y, z, 20, 2);
+    Audio.sfx('summon');
+    let t = 0, flashed = false;
+    this.items.push({
+      obj: root,
+      update: (dt) => {
+        t += dt;
+        const closing = t > dur + 2.2 ? Math.max(0, 1 - (t - dur - 2.2) / 0.4) : 1;
+        root.scale.setScalar(Math.max(0.01, Math.min(1, t / 0.25) * closing));
+        hinge.rotation.y = -Math.min(1, Math.max(0, (t - 0.25) / (dur * 0.35))) * 1.9;
+        if (t > dur * 0.35 && !flashed) { flashed = true; this.fx.sparks(x, tgt.y + 1.4, z, 22, 0xff6a3a, 3); }
+        glow.intensity = (hinge.rotation.y < -0.2 ? 12 + Math.sin(t * 40) * 4 : 0) * closing;
+        return t < dur + 2.6;
+      },
+      dispose: () => { root.traverse((o) => { const m = o as THREE.Mesh; m.geometry?.dispose?.(); (m.material as THREE.Material | undefined)?.dispose?.(); }); },
     });
   }
 

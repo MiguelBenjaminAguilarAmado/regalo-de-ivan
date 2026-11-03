@@ -7,6 +7,7 @@ export class TouchControls {
   private stickBase: HTMLElement;
   private stickKnob: HTMLElement;
   private finBtn: HTMLElement;
+  private tagBtn: HTMLElement;
   private stickId = -1;
   private origin = { x: 0, y: 0 };
 
@@ -22,6 +23,8 @@ export class TouchControls {
       return b;
     };
     this.finBtn = btn('fin', 'FINISHER', '', () => input.press('finisher'));
+    this.tagBtn = btn('tag', 'RELEVO', 'pareja', () => input.press('tag'));
+    this.tagBtn.style.display = 'none';
     const zone = el('div', { class: 'stick-zone' }, [this.stickBase]);
     const buttons = el('div', { class: 'tbtns' }, [
       btn('light', 'GOLPE', 'ligero', () => input.press('light')),
@@ -30,6 +33,7 @@ export class TouchControls {
       btn('block', 'GUARDIA', 'mantén', () => (input.touch.block = true), () => (input.touch.block = false)),
       btn('taunt', 'BURLA', '', () => input.press('taunt')),
       this.finBtn,
+      this.tagBtn,
     ]);
     this.root = el('div', { class: 'touch-ui hidden' }, [zone, buttons]);
     parent.appendChild(this.root);
@@ -69,5 +73,6 @@ export class TouchControls {
   }
 
   setReady(v: boolean) { this.finBtn.classList.toggle('ready', v); }
+  setTag(v: boolean) { this.tagBtn.style.display = v ? '' : 'none'; }
   show(v: boolean) { this.root.classList.toggle('hidden', !v); }
 }

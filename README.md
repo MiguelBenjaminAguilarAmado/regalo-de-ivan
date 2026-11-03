@@ -116,3 +116,22 @@ Arranca antes `npm run dev` y define `CHROMIUM=/ruta/al/navegador` si no está e
 
 ### Sobre una build propia (app de escritorio/móvil)
 Con WebGL el juego va bien en navegador (medido en el Mac mini M4 y en emulación móvil). Una app propia (Tauri/Electron o Capacitor) **no mejora el rendimiento** de forma apreciable; solo serviría para distribuirlo como app o jugar sin conexión. Por ahora no hace falta.
+
+
+## Modo Historia ("Temporada 5: El fichaje")
+
+Nueve capítulos con novela visual, decisiones y combates especiales (parejas, jaula, aguantar el tiempo, Gauntlet, jefes con fases). Tres finales: **Campeón leal**, **Dueño del Hoyo** y **El rebelde**.
+
+- Contenido: `content/historia.ts` (capítulos, escenas, combates, finales). Lógica pura y tests: `src/modes/Story.ts`, `src/modes/Story.test.ts`.
+- Protagonista: Chema (`content/fighters.ts`); luchadores de la historia sin foto reciben un retrato generado (`src/content/avatar.ts`).
+- Mapas nuevos: Oficina de Pablo Motos, Ascensor 24/7, Estadio de Santiago (`src/arenas/`).
+- Probar la historia entera en el navegador: `npm run dev` y `node scripts/story-e2e.mjs elso|pablo [0|1]`; combates con tiempo/jefe: `node scripts/story-fights.mjs`.
+
+
+## Mundo abierto ("El Hoyo City")
+
+Ciudad explorable en 3D (tercera persona) enlazada al Modo Historia: 8 distritos (Plaza, 3000 Viviendas, Aldea Kongui, Playa, Manchester, Polígono, Torre Motos, Santiago) que se abren al avanzar los capítulos. Ciclo día/noche, combates callejeros, nivel/XP/Hoyos, gimnasio y equipo (los bonos de Chema valen en todos los modos, tope +30 %), tienda, taxi con viaje rápido, mapa, 24 misiones, 30 pegatinas, 10 grafitis, cartas de luchador, 4 minijuegos (pulso, comilona, pesca, tambores), apuestas nocturnas en el garito y Torre Motos tras el final.
+
+- Lógica pura y tests: `src/modes/World.ts`, `src/modes/World.test.ts`, `src/world/layout.test.ts`.
+- Datos: `content/mundo.ts`, `content/mundo-npc.ts`, `content/misiones.ts`. Escena y controlador: `src/world/` (`WorldView`, `WorldController`, `minigames`, `layout`); UI: `src/ui/WorldUI.ts`.
+- Pruebas en navegador (con `npm run dev`): `node scripts/world-e2e.mjs`, `node scripts/world-tour.mjs <carpeta>`.

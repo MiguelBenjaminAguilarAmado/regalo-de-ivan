@@ -44,6 +44,7 @@ export class AIController {
   private clinchWait = -1;
   private wantTaunt = false;
   private whiffing = false;
+  private tagCool = 0;
 
   constructor(public me: number, difficulty: Difficulty, private rng: () => number = Math.random) {
     this.p = PROFILES[difficulty];
@@ -54,11 +55,19 @@ export class AIController {
     const inp = emptyInput();
     const me = m.f[this.me], op = m.f[1 - this.me];
     this.clock += dt;
+    this.tagCool -= dt;
     this.cool -= dt;
     this.intentT -= dt;
     const dx = op.x - me.x, dz = op.z - me.z;
     const d = Math.hypot(dx, dz) || 0.001;
     const ux = dx / d, uz = dz / d;
+
+    // ---- parejas: relevar al compañero si estoy hecho polvo y él está mejor
+    const bench = m.bench[this.me];
+    if (bench && bench.hp > 0 && me.state === 'idle' && this.tagCool <= 0) {
+      const weak = me.hpPct < 0.3 || (me.exhausted && me.st < 8);
+      if (weak && bench.hp / bench.maxHp > me.hpPct + 0.25) { inp.tag = true; this.tagCool = 6; return inp; }
+    }
 
     // ---- estados especiales
     switch (me.state) {
@@ -187,7 +196,8 @@ export class AIController {
       const go = mode === 'asap' ? true : mode === 'dramatic' ? dramatic : op.hpPct < 0.35 || op.state === 'stunned';
       const fr = me.finisher.rush ? 4.6 : me.finisher.range * 0.9;
       if (go && d < fr && (!me.finisher.rush || d > 2.2)) { this.plan = []; this.finisherNow = true; }
-      else if (go) { this.intent = 'approach'; this.intentT = 0.5; return; }
+      // los finishers de embestida necesitan carrerilla: si está demasiado cerca, se aleja en vez de acercarse más
+      else if (go) { this.intent = me.finisher.rush && d <= 2.2 ? 'retreat' : 'approach'; this.intentT = 0.5; return; }
     }
 
     // pocas fuerzas: retirarse y recuperar

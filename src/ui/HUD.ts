@@ -3,7 +3,7 @@ import { el } from './dom';
 
 const fmt = (t: number) => `${Math.floor(t / 60)}:${String(Math.floor(t % 60)).padStart(2, '0')}`;
 
-interface Side { root: HTMLElement; hp: HTMLElement; hpGhost: HTMLElement; st: HTMLElement; mom: HTMLElement; name: HTMLElement; ready: HTMLElement; sub: HTMLElement }
+interface Side { combo: HTMLElement; root: HTMLElement; hp: HTMLElement; hpGhost: HTMLElement; st: HTMLElement; mom: HTMLElement; name: HTMLElement; ready: HTMLElement; sub: HTMLElement }
 
 export class HUD {
   root: HTMLElement;
@@ -33,13 +33,15 @@ export class HUD {
       const name = el('div', { class: 'pname' });
       const ready = el('div', { class: 'ready' }, 'FINISHER');
       const sub = el('div', { class: 'psub' });
+      const combo = el('div', { class: 'combo' });
       const root = el('div', { class: `pside ${i === 0 ? 'left' : 'right'}` }, [
         el('div', { class: 'pplate' }, [name, sub]),
+        combo,
         el('div', { class: 'bar hp' }, [hpGhost, hp]),
         el('div', { class: 'bar st' }, [st]),
         el('div', { class: 'bar mom' }, [mom, ready]),
       ]);
-      return { root, hp, hpGhost, st, mom, name, ready, sub };
+      return { combo, root, hp, hpGhost, st, mom, name, ready, sub };
     };
     this.sides = [mkSide(0), mkSide(1)];
     this.timer = el('div', { class: 'timer' }, '0:00');
@@ -69,7 +71,8 @@ export class HUD {
     this.sides.forEach((s, i) => {
       s.name.textContent = match.f[i].data.name;
       s.root.classList.toggle('player', i === playerIdx);
-      s.sub.textContent = playerIdx < 0 ? 'CPU ' + (i + 1) : i === playerIdx ? 'TÚ' : 'CPU';
+      s.sub.dataset.base = playerIdx < 0 ? 'CPU ' + (i + 1) : i === playerIdx ? 'TÚ' : 'CPU';
+      s.sub.textContent = s.sub.dataset.base;
     });
     this.ghost = [100, 100];
     this.hint.innerHTML = hintText;
@@ -106,6 +109,16 @@ export class HUD {
     requestAnimationFrame(() => { this.flashEl.style.transition = 'opacity .5s'; this.flashEl.style.opacity = '0'; setTimeout(() => (this.flashEl.style.transition = ''), 520); });
   }
 
+  /** Contador de golpes seguidos ("5 HITS") junto a la barra del que los da */
+  combo(i: number, n: number) {
+    const c = this.sides[i].combo;
+    c.textContent = n >= 5 ? `${n} GOLPES · ¡COMBO!` : `${n} GOLPES`;
+    c.classList.remove('pop'); void c.offsetWidth; c.classList.add('pop');
+    window.clearTimeout(this.comboT[i]);
+    this.comboT[i] = window.setTimeout(() => c.classList.remove('pop'), 1500);
+  }
+  private comboT = [0, 0];
+
   bigCount(text: string, label = '') {
     this.countEl.firstChild && (this.countEl.firstChild as HTMLElement).remove?.();
     this.countEl.textContent = text;
@@ -130,9 +143,18 @@ export class HUD {
   update(dt: number, match: Match, playerIdx: number, realDt: number) {
     this.fps += (Math.min(120, 1 / Math.max(0.001, realDt)) - this.fps) * 0.05;
     if (this.fpsEl.style.display !== 'none') this.fpsEl.textContent = Math.round(this.fps) + ' fps';
-    this.timer.textContent = fmt(match.time);
+    // con límite de tiempo, cuenta atrás (en rojo el último tramo)
+    if (match.timeLimit != null) {
+      const left = Math.max(0, match.timeLimit - match.time);
+      this.timer.textContent = fmt(Math.ceil(left));
+      this.timer.classList.toggle('low', left < 10);
+    } else this.timer.textContent = fmt(match.time);
     this.sides.forEach((s, i) => {
       const f = match.f[i];
+      if (s.name.textContent !== f.data.name) s.name.textContent = f.data.name;
+      const bn = match.bench[i];
+      const subText = (s.sub.dataset.base ?? '') + (bn ? ` · RELEVO: ${bn.data.name} ${Math.round((bn.hp / bn.maxHp) * 100)}%` : '');
+      if (s.sub.textContent !== subText) s.sub.textContent = subText;
       const pct = Math.max(0, (f.hp / f.maxHp) * 100);
       this.ghost[i] += (pct - this.ghost[i]) * Math.min(1, dt * 2.2);
       if (this.ghost[i] < pct) this.ghost[i] = pct;

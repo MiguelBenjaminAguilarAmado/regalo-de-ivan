@@ -1,6 +1,6 @@
 export type Difficulty = 'facil' | 'intermedia' | 'dificil';
-export type ArenaId = 'matamoros' | 'manchester';
-export type WinReason = 'ko' | 'pin' | 'rendicion' | 'fuera';
+export type ArenaId = 'matamoros' | 'manchester' | 'tribu' | 'garito' | 'jaula' | 'azotea' | 'playa' | 'oficina' | 'ascensor' | 'santiago';
+export type WinReason = 'ko' | 'pin' | 'rendicion' | 'fuera' | 'tiempo';
 
 export type MoveKind = 'strike' | 'grab' | 'finisher' | 'taunt';
 
@@ -27,9 +27,9 @@ export interface Move {
   lunge?: number;
   /** Finishers: efectos */
   /** Objeto que sostiene mientras ejecuta el movimiento */
-  prop?: 'chair' | 'maletin' | 'microfono' | 'casco' | 'cuerno';
+  prop?: 'chair' | 'maletin' | 'microfono' | 'casco' | 'cuerno' | 'bate';
   /** Criatura/vehículo que se invoca para el golpe (solo visual; el daño lo calcula Match) */
-  summon?: 'momia' | 'tanque';
+  summon?: 'momia' | 'tanque' | 'tribu';
   /** Embestida: velocidad (m/s) con la que corre durante la ventana activa */
   rush?: number;
   /** Texto de anuncio al usarlo (movimientos raros) */
@@ -70,17 +70,39 @@ export interface MoveSet {
 export interface Appearance {
   skin: number;
   hair?: number | null;
-  outfit: 'cuero' | 'traje' | 'blazer' | 'camiseta' | 'abrigo' | 'arbitro' | 'desnudo';
+  outfit: 'cuero' | 'traje' | 'blazer' | 'camiseta' | 'abrigo' | 'arbitro' | 'desnudo' | 'sudadera';
   outfitColor: number;
   trunksColor: number;
   accent: number;
-  mask?: 'perro' | 'caballo' | null;
+  mask?: 'perro' | 'caballo' | 'doge' | 'bolsa' | 'alien' | 'hamburguesa' | null;
+  /** Color de la bolsa/máscara cuando es personalizable (p. ej. la bolsa blanca de Alesinfacha) */
+  maskColor?: number | null;
+  /** Vendas por todo el cuerpo (color de las vendas) */
+  bandages?: number | null;
+  /** Cinturón de campeón (color de la correa; la placa es dorada) */
+  belt?: number | null;
+  /** Mochila (astronauta) */
+  backpack?: number | null;
+  /** Gorra o sombrero */
+  hat?: { kind: 'gorra' | 'sombrero' | 'casco' | 'tricornio' | 'corona'; color: number } | null;
+  /** Peinado especial: melena larga o cresta alta (Kongui) */
+  hairStyle?: 'larga' | 'cresta' | null;
   wraps?: number | null;
   facePaint?: 'payaso' | null;
   beard?: number | null;
-  glasses?: boolean;
+  glasses?: boolean | 'sol';
   build: number; // 0.9 - 1.15
   height: number; // 0.95 - 1.08
+}
+
+/** Traje alternativo de un luchador: cambia solo su aspecto */
+export interface SkinDef {
+  id: string;
+  name: string;
+  description: string;
+  /** Si lo tiene, el traje solo está disponible con este logro (p. ej. recompensa de la historia) */
+  unlock?: { achievement: string; hint: string };
+  appearance: Partial<Appearance>;
 }
 
 export interface UnlockRule {
@@ -103,12 +125,16 @@ export interface FighterConfig {
   description: string;
   /** Cómo lucha, en una frase */
   style: string;
+  /** Trajes alternativos (el aspecto base es el "Original") */
+  skins?: SkinDef[];
   /** Rasgos especiales */
-  traits?: { rootedGuard?: boolean };
+  traits?: { rootedGuard?: boolean; /** golpe fuerte desde una esquina = planchazo desde el poste */ cornerDive?: boolean };
 }
 
 export interface FighterData extends FighterConfig {
   name: string;
+  /** Traje equipado (si no es el original) */
+  skinId?: string;
   /** Foto grande (cuerpo/escena) */
   portrait: string | null;
   /** Foto de perfil cuadrada, para iconos (si no hay, se usa portrait) */
@@ -126,6 +152,8 @@ export interface Input {
   finisher: boolean;
   block: boolean;
   run: boolean;
+  /** Relevo (combates por parejas) */
+  tag: boolean;
 }
 
 export const emptyInput = (): Input => ({
@@ -138,6 +166,7 @@ export const emptyInput = (): Input => ({
   finisher: false,
   block: false,
   run: false,
+  tag: false,
 });
 
 export type GameEvent =
@@ -162,8 +191,20 @@ export type GameEvent =
   | { type: 'outCount'; fighter: number; n: number }
   | { type: 'foul'; fighter: number; seen: boolean }
   | { type: 'taunt'; fighter: number }
-  | { type: 'summon'; kind: 'momia' | 'tanque'; fighter: number; target: number; dur: number }
+  | { type: 'summon'; kind: 'momia' | 'tanque' | 'tribu'; fighter: number; target: number; dur: number; x?: number; z?: number }
+  | { type: 'adrenaline'; fighter: number }
+  | { type: 'phase'; side: number; text: string }
+  | { type: 'bonus'; side: number; text: string }
+  | { type: 'blackout'; on: boolean }
+  | { type: 'gust'; dx: number; dz: number }
+  | { type: 'cage'; x: number; z: number }
+  | { type: 'duo'; side: number; name: string; desc: string }
+  | { type: 'tag'; side: number; out: string; inn: string; forced: boolean }
+  | { type: 'combo'; fighter: number; n: number }
+  | { type: 'mob'; target: number }
+  | { type: 'minionHit'; id: number; x: number; z: number; dead: boolean }
   | { type: 'toreo'; fighter: number; target: number }
+  | { type: 'quake'; fighter: number; x: number; z: number; direct: boolean }
   | { type: 'heavyPick'; fighter: number; move: Move }
   | { type: 'ready'; fighter: number }
   | { type: 'exhausted'; fighter: number }

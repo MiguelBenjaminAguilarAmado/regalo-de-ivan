@@ -1,5 +1,7 @@
 import type { Difficulty } from '../combat/types';
 import type { Quality } from '../arenas/Arena';
+import type { StoryProgress } from '../modes/Story';
+import type { WorldProgress } from '../modes/World';
 
 export interface Settings {
   quality: 'auto' | Quality;
@@ -22,6 +24,16 @@ export interface SaveData {
   winsBy: Record<string, number>;
   taunts: number;
   settings: Settings;
+  /** Último traje elegido por luchador (id del luchador → id del traje) */
+  skins?: Record<string, string>;
+  /** Torneos ganados por tipo (champion / tag / femboy) */
+  tourWins?: Record<string, number>;
+  /** Mejor racha del modo Supervivencia */
+  survivalBest?: number;
+  /** Progreso del modo Historia */
+  story?: StoryProgress;
+  /** Progreso del mundo abierto (El Hoyo City) */
+  world?: WorldProgress;
 }
 
 const KEY = 'el-hoyo-wrestling-v1';

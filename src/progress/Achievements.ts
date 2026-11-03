@@ -19,13 +19,37 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'impecable', name: 'Impecable', desc: 'Gana habiendo recibido menos del 20 % de tu vida en daño.' },
   { id: 'burlon', name: 'El burlón', desc: 'Haz 10 burlas en total.' },
   { id: 'despedido', name: 'Estás despedido', desc: 'Gana con "La hora de Pablo Motos".' },
+  { id: 'historia', name: 'Leyenda del Hoyo', desc: 'Completa el modo Historia.' },
+  { id: 'cap3', name: 'Hoyo Champion', desc: 'Historia: gana el torneo del Hoyo Champion.' },
+  { id: 'cap4', name: 'Justicia a medias', desc: 'Historia: gana el combate por parejas contra Big Boom y Big Justice.' },
+  { id: 'cap5', name: 'Rompe la jaula', desc: 'Historia: derrota a Yosuke en la jaula de acero.' },
+  { id: 'cap7', name: 'Superviviente de Santiago', desc: 'Historia: sobrevive al Gauntlet de Santiago.' },
+  { id: 'final_leal', name: 'Final: Campeón leal', desc: 'Historia: termina siendo el favorito de Pablo Motos.' },
+  { id: 'final_rebelde', name: 'Final: El rebelde', desc: 'Historia: planta cara a Pablo Motos y se lo cuenta a todos.' },
+  { id: 'final_dueno', name: 'Final: Dueño del Hoyo', desc: 'Historia: te quedas con la empresa.' },
+  { id: 'w_pelea', name: 'Peleón callejero', desc: 'Mundo abierto: gana tu primer combate callejero.' },
+  { id: 'w_pelea25', name: 'Rey de la calle', desc: 'Mundo abierto: gana 25 combates callejeros.' },
+  { id: 'w_nivel10', name: 'Nivel 10', desc: 'Mundo abierto: llega al nivel 10.' },
+  { id: 'w_nivel25', name: 'Nivel máximo', desc: 'Mundo abierto: llega al nivel 25.' },
+  { id: 'w_quest10', name: 'Manitas del barrio', desc: 'Mundo abierto: completa 10 misiones.' },
+  { id: 'w_quest24', name: 'Todas las misiones', desc: 'Mundo abierto: completa las 24 misiones.' },
+  { id: 'w_stickers', name: 'Álbum completo', desc: 'Mundo abierto: encuentra las 30 pegatinas del Hoyo.' },
+  { id: 'w_cartas', name: 'Coleccionista de cartas', desc: 'Mundo abierto: consigue las 14 cartas de luchador.' },
+  { id: 'w_distritos', name: 'Turista del Hoyo', desc: 'Mundo abierto: visita los 8 distritos.' },
+  { id: 'w_apuestas', name: 'Rey del garito', desc: 'Mundo abierto: gana 5 apuestas.' },
+  { id: 'w_torre', name: 'La Torre, completa', desc: 'Mundo abierto: supera los 10 pisos de la Torre Motos.' },
+  { id: 'w_leyenda', name: 'Leyenda de la ciudad', desc: 'Mundo abierto: consigue el título de Leyenda.' },
+  { id: 'w_rico', name: 'Hoyo en la cuenta', desc: 'Mundo abierto: llega a tener 5.000 Hoyos.' },
+  { id: 'w_gym', name: 'Atleta perfecto', desc: 'Mundo abierto: sube los 5 atributos del gimnasio al máximo.' },
+  { id: 'racha5', name: 'Superviviente', desc: 'Encadena 5 victorias en Supervivencia.' },
+  { id: 'racha10', name: 'Inmortal del Hoyo', desc: 'Encadena 10 victorias en Supervivencia.' },
 ];
 
 export interface MatchCtx {
   summary: MatchSummary;
   player: number; // índice del jugador en el combate
   playerData: FighterData;
-  mode: 'versus' | 'torneo' | 'espectador';
+  mode: 'versus' | 'torneo' | 'espectador' | 'supervivencia' | 'historia' | 'mundo';
   difficulty: Difficulty;
   tournamentWon?: boolean;
 }
@@ -59,6 +83,13 @@ export function applyResult(save: SaveData, c: MatchCtx): string[] {
     give('torneo');
     if (c.difficulty === 'dificil') give('torneo_dificil');
   }
+  return got;
+}
+
+/** Logros por racha de Supervivencia */
+export function applyStreak(save: SaveData, wins: number): string[] {
+  const got: string[] = [];
+  for (const [n, id] of [[5, 'racha5'], [10, 'racha10']] as const) if (wins >= n && !save.achievements[id]) { save.achievements[id] = Date.now(); got.push(id); }
   return got;
 }
 

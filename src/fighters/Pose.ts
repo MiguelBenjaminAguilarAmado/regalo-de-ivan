@@ -28,7 +28,7 @@ export const GUARD: Pose = {
 export type PartialPose = Partial<Pose>;
 export const mk = (o: PartialPose, base: Pose = GUARD): Pose => ({ ...base, ...o });
 
-const LYING: Pose = mk({
+export const LYING: Pose = mk({
   hips: [0, 0, 0], torso: [0, 0, 0], head: [0.1, 0, 0],
   lU: [0.1, 0, 0.55], lF: [-0.25, 0, 0.1], rU: [0.1, 0, -0.55], rF: [-0.25, 0, -0.1],
   lT: [0, 0, 0.18], lS: [0.1, 0, 0], rT: [0, 0, -0.18], rS: [0.1, 0, 0],

@@ -1,0 +1,1 @@
+darksinfacha originalmente se llamaba Alesinfacha, este traje lo trae devuelta! cambia el color de su casco y camisa a blanco y le agrega una sudadera blanca.

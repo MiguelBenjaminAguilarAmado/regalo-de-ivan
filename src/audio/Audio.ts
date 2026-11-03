@@ -1,7 +1,7 @@
 /** Audio 100% sintetizado con WebAudio: sin ficheros externos. */
 const mtof = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
 
-export type MusicKind = 'menu' | 'matamoros' | 'manchester' | 'victoria' | null;
+export type MusicKind = 'menu' | 'matamoros' | 'manchester' | 'tribu' | 'garito' | 'jaula' | 'azotea' | 'playa' | 'oficina' | 'ascensor' | 'santiago' | 'victoria' | null;
 
 class AudioSys {
   ctx: AudioContext | null = null;
@@ -157,7 +157,7 @@ class AudioSys {
     this.musicTimer = window.setInterval(tick, 250);
   }
   stopMusic() { if (this.musicTimer) window.clearInterval(this.musicTimer); this.musicTimer = null; this.musicKind = null; }
-  private barLen(k: MusicKind) { return k === 'manchester' ? 60 / 112 * 4 : k === 'matamoros' ? 60 / 76 * 4 : k === 'victoria' ? 2 : 60 / 84 * 4; }
+  private barLen(k: MusicKind) { return k === 'manchester' ? 60 / 112 * 4 : k === 'tribu' ? 60 / 100 * 4 : k === 'jaula' ? 60 / 104 * 4 : k === 'oficina' ? 60 / 96 * 4 : k === 'ascensor' ? 60 / 80 * 4 : k === 'santiago' ? 60 / 108 * 4 : k === 'azotea' ? 60 / 72 * 4 : k === 'playa' ? 60 / 90 * 4 : k === 'garito' ? 60 / 88 * 4 : k === 'matamoros' ? 60 / 76 * 4 : k === 'victoria' ? 2 : 60 / 84 * 4; }
 
   private mtone(freq: number, dur: number, type: OscillatorType, gain: number, at: number, filt = 2000, attack = 0.02) {
     const c = this.ctx!;
@@ -192,6 +192,74 @@ class AudioSys {
       this.noise(0.08, 8000, 0.6, 'highpass', 0.06, at - this.t(), this.musG);
       for (let i = 0; i < 4; i++) { this.noise(0.1, 200, 1, 'lowpass', 0.35, at + (i * len) / 4 - this.t(), this.musG); }
       [0, 7, 12, 15].forEach((n) => this.mtone(mtof(r + 24 + n), len, 'sawtooth', 0.03, at, 1200, 0.3));
+    } else if (kind === 'tribu') {
+      // tambores de la aldea: pulso grave, tumbadoras y un cántico de flauta pentatónica
+      const hits = [0, 0.75, 1.5, 2.0, 2.5, 3.25];
+      for (const h of hits) { const t = at + (h * len) / 4; this.mtone(95, 0.35, 'sine', 0.45, t, 260, 0.004, ); this.noise(0.06, 500, 1, 'bandpass', 0.18, t - this.t(), this.musG); }
+      for (let i = 0; i < 8; i++) { const t = at + (i * len) / 8 + (i % 2 ? 0.03 : 0); this.mtone(210 + (i % 3) * 40, 0.12, 'triangle', 0.12, t, 900, 0.004); }
+      const pent = [57, 60, 62, 64, 67, 69];
+      const phrase = [0, 2, 3, 2, 4, 3, 1, 0];
+      for (let i = 0; i < 8; i++) if ((bar + i) % 3 !== 2) this.mtone(mtof(pent[phrase[(i + bar) % 8] % 6] + 12), (len / 8) * 1.4, 'sine', 0.07, at + (i * len) / 8, 2200, 0.05);
+      this.mtone(mtof(45), len, 'sine', 0.12, at, 250, 0.3);
+    } else if (kind === 'garito') {
+      // bajo sucio de bar: blues lento y distorsionado con caja seca
+      const roots = [40, 40, 45, 43];
+      const r = roots[bar % 4];
+      for (let i = 0; i < 8; i++) {
+        const t = at + (i * len) / 8;
+        const n = [0, 0, 3, 0, 5, 3, 0, 7][i];
+        this.mtone(mtof(r + n), 0.3, 'sawtooth', 0.16, t, 420, 0.01);
+      }
+      this.noise(0.1, 1800, 1, 'bandpass', 0.35, at + len / 2 - this.t(), this.musG);
+      this.noise(0.1, 1800, 1, 'bandpass', 0.35, at + len - len / 4 - this.t(), this.musG);
+      this.mtone(60, 0.4, 'sine', 0.4, at, 200, 0.005); this.mtone(60, 0.4, 'sine', 0.3, at + (len * 3) / 8, 200, 0.005);
+      [0, 3, 7].forEach((n) => this.mtone(mtof(r + 24 + n + (bar % 2) * 2), len, 'square', 0.018, at, 900, 0.4));
+    } else if (kind === 'jaula') {
+      // industrial: bombo pesado, golpes metálicos y un riff grave y sucio
+      const r = [38, 38, 41, 36][bar % 4];
+      for (let i = 0; i < 4; i++) { const t = at + (i * len) / 4; this.mtone(52, 0.3, 'sine', 0.55, t, 220, 0.003); this.noise(0.05, 5200, 2, 'highpass', 0.18, t + len / 8 - this.t(), this.musG); }
+      this.noise(0.18, 1400, 3, 'bandpass', 0.3, at + len / 2 - this.t(), this.musG);
+      for (let i = 0; i < 8; i++) { const n = [0, 0, 3, 0, 5, 0, 3, 7][i]; this.mtone(mtof(r + 12 + n), (len / 8) * 0.9, 'sawtooth', 0.11, at + (i * len) / 8, 700, 0.01); }
+      this.mtone(mtof(r + 36), len, 'square', 0.012, at, 1200, 0.5);
+    } else if (kind === 'azotea') {
+      // lo-fi nocturno: acordes de piano eléctrico, bombo suave y viento
+      const prog = [[57, 60, 64, 67], [53, 57, 60, 64], [55, 59, 62, 65], [52, 56, 59, 62]];
+      prog[bar % 4].forEach((n, i) => this.mtone(mtof(n + 12), len * 0.95, 'triangle', 0.07, at + i * 0.04, 1300, 0.04));
+      this.mtone(mtof(prog[bar % 4][0] - 24), len / 2, 'sine', 0.25, at, 300, 0.02);
+      this.mtone(60, 0.3, 'sine', 0.3, at, 200, 0.004); this.mtone(60, 0.3, 'sine', 0.22, at + (len * 5) / 8, 200, 0.004);
+      this.noise(0.1, 1800, 1, 'bandpass', 0.14, at + len / 2 - this.t(), this.musG);
+      this.noise(len * 0.9, 380, 0.7, 'bandpass', 0.045, at - this.t(), this.musG);
+      for (let i = 0; i < 4; i++) if ((bar + i) % 3 !== 0) this.mtone(mtof(prog[bar % 4][i % 4] + 24), 0.35, 'sine', 0.05, at + (i * len) / 4 + 0.1, 2400, 0.01);
+    } else if (kind === 'playa') {
+      // reggae de playa: skank a contratiempo, bajo y melodía tipo steel drum
+      const r = [45, 45, 50, 43][bar % 4];
+      for (let i = 0; i < 8; i++) { const t = at + (i * len) / 8; if (i % 2 === 1) [0, 4, 7].forEach((n) => this.mtone(mtof(r + 24 + n), 0.09, 'square', 0.035, t, 2600, 0.003)); if (i % 4 === 0) this.mtone(mtof(r - 12), len / 4, 'sine', 0.3, t, 350, 0.01); }
+      this.mtone(65, 0.3, 'sine', 0.35, at + (len * 2) / 4, 200, 0.004);
+      this.noise(0.07, 7000, 1, 'highpass', 0.1, at + len / 4 - this.t(), this.musG);
+      const mel = [0, 2, 4, 7, 9, 7, 4, 2];
+      for (let i = 0; i < 8; i++) if ((i + bar) % 4 !== 3) this.mtone(mtof(r + 36 + mel[(i + bar) % 8]), (len / 8) * 1.3, 'sine', 0.07, at + (i * len) / 8, 3200, 0.005);
+    } else if (kind === 'oficina') {
+      // jazz de despacho: bajo andante, escobillas y acordes de piano eléctrico (Dm7 – G7 – Cmaj7 – A7)
+      const root = [50, 43, 48, 45][bar % 4];
+      const chord = [[0, 3, 7, 10], [0, 4, 7, 10], [0, 4, 7, 11], [0, 4, 7, 10]][bar % 4];
+      chord.forEach((n) => this.mtone(mtof(root + 12 + n), len * 0.5, 'triangle', 0.06, at + 0.02, 1600, 0.03));
+      for (let i = 0; i < 4; i++) { const t = at + (i * len) / 4; this.mtone(mtof(root - 12 + [0, 3, 5, 7][i]), (len / 4) * 0.9, 'sine', 0.3, t, 400, 0.01); this.noise(0.06, 6500, 1, 'highpass', 0.07, t - this.t(), this.musG); if (i % 2) this.noise(0.05, 6500, 1, 'highpass', 0.05, t + len / 8 - this.t(), this.musG); }
+      this.noise(0.1, 700, 2, 'bandpass', 0.12, at + len / 2 - this.t(), this.musG);
+    } else if (kind === 'ascensor') {
+      // hilo musical de ascensor: melodía dulce y un "ding" por compás
+      const roots = [60, 57, 53, 55];
+      const r = roots[bar % 4];
+      [0, 4, 7].forEach((n, i) => this.mtone(mtof(r + n), len * 1.0, 'sine', 0.06, at + i * 0.05, 1800, 0.2));
+      const mel = [12, 14, 16, 19, 16, 14, 12, 9];
+      for (let i = 0; i < 8; i++) if (i % 2 === 0 || (bar + i) % 3 === 0) this.mtone(mtof(r + mel[i]), (len / 8) * 1.6, 'sine', 0.07, at + (i * len) / 8, 2600, 0.03);
+      this.mtone(mtof(88), 0.9, 'sine', 0.05, at + len * 0.75, 4000, 0.003);
+    } else if (kind === 'santiago') {
+      // música latina de estadio: tumbao de bajo, clave y metales
+      const r = [45, 50, 52, 45][bar % 4];
+      [0, 0.75, 1.5, 2.5, 3.0].forEach((h) => this.mtone(mtof(r - 12 + (h === 1.5 ? 7 : 0)), 0.22, 'sine', 0.33, at + (h * len) / 4, 380, 0.005));
+      [0, 0.75, 1.5, 2.0, 3.0].forEach((h) => this.noise(0.04, 3200, 2, 'bandpass', 0.2, at + (h * len) / 4 - this.t(), this.musG));
+      [0, 4, 7, 12].forEach((n, i) => this.mtone(mtof(r + 24 + n), 0.16, 'square', 0.035, at + ((i % 2 ? 1.5 : 0.75) * len) / 4, 2600, 0.01));
+      for (let i = 0; i < 8; i++) this.mtone(180 + (i % 3) * 30, 0.08, 'triangle', 0.09, at + (i * len) / 8, 900, 0.004);
     } else if (kind === 'victoria') {
       [0, 4, 7, 12].forEach((n, i) => this.mtone(mtof(60 + n), 1.6, 'triangle', 0.12, at + i * 0.15, 3000, 0.02));
     } else {

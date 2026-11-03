@@ -78,6 +78,7 @@ export class Beam {
 export abstract class Arena {
   group = new THREE.Group();
   ring: THREE.Group;
+  floor: THREE.Mesh;
   key: THREE.SpotLight;
   crowd: Crowd | null = null;
   screens: LedScreen[] = [];
@@ -89,8 +90,9 @@ export abstract class Arena {
   fogDensity = 0.006;
   exposure = 1.0;
 
-  constructor(protected opts: ArenaOpts, ringStyle: RingStyle) {
-    this.ring = buildRing(ringStyle);
+  /** `ringStyle` null = escenario sin ring (ni cuerdas ni barricada) */
+  constructor(protected opts: ArenaOpts, ringStyle: RingStyle | null, barricade = true) {
+    this.ring = ringStyle ? buildRing(ringStyle) : new THREE.Group();
     this.group.add(this.ring);
 
     // suelo
@@ -100,12 +102,13 @@ export abstract class Arena {
     );
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
+    this.floor = floor;
     this.group.add(floor);
 
     // barricada
     const bm = new THREE.MeshStandardMaterial({ color: 0x15151a, roughness: 0.55, metalness: 0.3 });
     const L = FLOOR_LIM + 0.35;
-    for (const [x, z, w, d] of [[0, L, L * 2 + 0.6, 0.3], [0, -L, L * 2 + 0.6, 0.3], [L, 0, 0.3, L * 2], [-L, 0, 0.3, L * 2]] as const) {
+    if (ringStyle && barricade) for (const [x, z, w, d] of [[0, L, L * 2 + 0.6, 0.3], [0, -L, L * 2 + 0.6, 0.3], [L, 0, 0.3, L * 2], [-L, 0, 0.3, L * 2]] as const) {
       const b = new THREE.Mesh(new THREE.BoxGeometry(w, 1.15, d), bm);
       b.position.set(x, 0.575, z);
       b.castShadow = true; b.receiveShadow = true;
@@ -147,6 +150,9 @@ export abstract class Arena {
     this.group.add(b.pivot);
     this.beams.push(b);
   }
+
+  /** Apagón (Estadio de Santiago): las arenas que lo soportan oscurecen las luces */
+  setBlackout(_on: boolean) { /* por defecto, nada */ }
 
   update(dt: number, t: number, excite: number, viewportH: number) {
     this.crowd?.update(t, excite, viewportH);

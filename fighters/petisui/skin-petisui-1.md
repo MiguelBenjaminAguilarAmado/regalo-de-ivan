@@ -1,0 +1,1 @@
+La skin 1 de petisui nace de la correa from manchester, ante su duelo contra kent, donde fue el main event de aquel PPV (Paga por ver) con su coronación en aquel combate donde conservó su título de "Hoyo Champion"
