@@ -10,49 +10,58 @@
 import type { CivilDef, DistrictDef, GraffitiDef, PoiDef, StickerDef } from '../src/world/types';
 import type { Item } from '../src/modes/World';
 
-export const WORLD_SIZE = 126;      // medio lado del mundo (m)
-export const SEA_Z = 118;           // a partir de aquí (z) hay mar: no se puede pasar
+/**
+ * Hoyo es UNA ciudad: 8 distritos pegados en una cuadrícula de 3×3 (la playa ocupa dos casillas), separados por
+ * cuatro grandes avenidas (x = ±57, z = ±57). Cada distrito tiene su propio trazado de calles (`streets`):
+ * avenidas anchas en la Torre, callejuelas en las 3000, un bulevar en Manchester, naves en el polígono…
+ */
+export const WORLD_SIZE = 172;      // medio lado de la ciudad (m)
+export const SEA_Z = 150;           // a partir de aquí (z) hay mar: no se puede pasar
 export const SPAWN: [number, number] = [0, 10];
+/** Grandes avenidas entre distritos: [x1, z1, x2, z2, ancho de calzada] */
+export const AVENUES: [number, number, number, number, number][] = [
+  [-172, -57, 172, -57, 12], [-172, 57, 172, 57, 12], [-57, -172, -57, 150, 12], [57, -172, 57, 57, 12],
+];
 
 export const DISTRICTS: DistrictDef[] = [
   {
     id: 'plaza', name: 'Plaza del Hoyo', blurb: 'El corazón de la ciudad: la fuente, el estadio de Matamoros, la tienda y el gimnasio.',
-    center: [0, 0], size: [64, 64], style: 'plaza', ground: 0x8a8478, palette: [0xcfc3a8, 0xb9a98a, 0xd9cdb4, 0xa89878], buildings: 14, height: [8, 18], freeRadius: 23,
+    center: [0, 0], size: [98, 98], style: 'plaza', ground: 0x8a8478, palette: [0xcfc3a8, 0xb9a98a, 0xd9cdb4, 0xa89878], buildings: 14, height: [8, 18], freeRadius: 23, streets: { xs: [-37, 37], zs: [-37, 37], w: 7 },
     arena: 'matamoros', music: 'matamoros',
   },
   {
     id: 'viviendas', name: 'Las 3000 Viviendas', blurb: 'Bloques de hormigón, grafitis y un garito donde no hay reglas.',
-    center: [-90, -5], size: [56, 64], style: 'blocks', ground: 0x4a4a50, palette: [0x6a6258, 0x58606a, 0x7a6a5a, 0x4e5660, 0x70625c], buildings: 18, height: [14, 40], freeRadius: 8,
+    center: [-117.5, 0], size: [105, 98], style: 'blocks', ground: 0x4a4a50, palette: [0x6a6258, 0x58606a, 0x7a6a5a, 0x4e5660, 0x70625c], buildings: 18, height: [14, 40], freeRadius: 15, streets: { xs: [-34, 34], zs: [-30, 30], w: 6, alleys: true },
     arena: 'garito', music: 'garito',
   },
   {
     id: 'aldea', name: 'Aldea de Kongui', blurb: 'El Reino Kongui: chozas, tambores y una tribu que lo ve todo.',
-    center: [88, -72], size: [56, 52], style: 'savanna', ground: 0xa87a44, palette: [0xb98a58, 0xa87a48, 0xc79a62], buildings: 12, height: [3, 5], freeRadius: 8,
+    center: [117.5, -117.5], size: [105, 105], style: 'savanna', ground: 0xa87a44, palette: [0xb98a58, 0xa87a48, 0xc79a62], buildings: 12, height: [3, 5], freeRadius: 60, streets: { xs: [], zs: [], w: 0 },
     arena: 'tribu', music: 'tribu', unlock: { chapter: 'garito' }, lockText: 'La tribu solo recibe a quien ya ha pisado el garito. (Historia: capítulo 2)',
   },
   {
     id: 'playa', name: 'Playa de Honduras', blurb: 'Arena, olas, un chiringuito tiki y una hoguera.',
-    center: [0, 95], size: [100, 44], style: 'beach', ground: 0xd9c690, palette: [0x9a7a3a, 0x7a5a2a], buildings: 5, height: [3, 5], freeRadius: 8,
+    center: [60.5, 107.5], size: [219, 85], style: 'beach', ground: 0xd9c690, palette: [0x9a7a3a, 0x7a5a2a], buildings: 5, height: [3, 5], freeRadius: 10, streets: { xs: [-80, -50, -20, 10, 40, 70], zs: [-14], w: 7, north: -14 },
     arena: 'playa', music: 'playa',
   },
   {
     id: 'manchester', name: 'Barrio Manchester', blurb: 'Teatros, cafés y un monigote azul gigante agitando los brazos.',
-    center: [95, 15], size: [56, 60], style: 'theater', ground: 0x5a5a66, palette: [0x8a4a4a, 0x4a5a8a, 0x8a7a4a, 0x6a4a7a, 0x4a7a6a], buildings: 14, height: [10, 26], freeRadius: 8,
+    center: [117.5, 0], size: [105, 98], style: 'theater', ground: 0x5a5a66, palette: [0x8a4a4a, 0x4a5a8a, 0x8a7a4a, 0x6a4a7a, 0x4a7a6a], buildings: 14, height: [10, 26], freeRadius: 22, streets: { xs: [-30, 30], zs: [-32], w: 6, boulevard: 30 },
     arena: 'manchester', music: 'manchester', unlock: { chapter: 'champion' }, lockText: 'Aún no te dejan entrar al teatro. (Historia: capítulo 3)',
   },
   {
     id: 'industrial', name: 'Polígono Industrial', blurb: 'Naves, chatarra y la fábrica donde se cierra la jaula.',
-    center: [-88, 80], size: [56, 44], style: 'industrial', ground: 0x3e3e44, palette: [0x6a6a70, 0x5a4a44, 0x4a5a5a, 0x70706a], buildings: 10, height: [8, 16], freeRadius: 8,
+    center: [-117.5, 107.5], size: [105, 85], style: 'industrial', ground: 0x3e3e44, palette: [0x6a6a70, 0x5a4a44, 0x4a5a5a, 0x70706a], buildings: 10, height: [8, 16], freeRadius: 22, streets: { xs: [-30, 30], zs: [-30, 24], w: 10 },
     arena: 'jaula', music: 'jaula', unlock: { chapter: 'pareja' }, lockText: 'El polígono está vallado. (Historia: capítulo 4)',
   },
   {
     id: 'torre', name: 'Torre Motos', blurb: 'La sede de Pablo Motos: moqueta, trofeos y un ascensor de cristal.',
-    center: [0, -92], size: [56, 48], style: 'tower', ground: 0x2a2e3a, palette: [0x30384a, 0x3a4458, 0x28303e], buildings: 8, height: [20, 44], freeRadius: 8,
+    center: [0, -117.5], size: [98, 105], style: 'tower', ground: 0x2a2e3a, palette: [0x30384a, 0x3a4458, 0x28303e], buildings: 8, height: [20, 44], freeRadius: 24, streets: { xs: [-27, 27], zs: [-30, 30], w: 12 },
     arena: 'oficina', music: 'oficina', unlock: { chapter: 'gauntlet' }, lockText: 'Seguridad no te deja pasar a la Torre. (Historia: capítulo 7)',
   },
   {
     id: 'santiago', name: 'Estadio de Santiago', blurb: 'Una esquina de Chile en mitad de la ciudad: estadio, empanadas y hinchada.',
-    center: [-92, -85], size: [56, 48], style: 'stadium', ground: 0x4a6a44, palette: [0xc1272d, 0xf2f2f2, 0x1c3f8c, 0x8a8a92], buildings: 8, height: [8, 18], freeRadius: 8,
+    center: [-117.5, -117.5], size: [105, 105], style: 'stadium', ground: 0x4a6a44, palette: [0xc1272d, 0xf2f2f2, 0x1c3f8c, 0x8a8a92], buildings: 8, height: [8, 18], freeRadius: 26, streets: { xs: [-34, 34], zs: [-32, 32], w: 9 },
     arena: 'santiago', music: 'santiago', unlock: { chapter: 'azotea' }, lockText: 'El tren a Santiago aún no pasa por aquí. (Historia: capítulo 6)',
   },
 ];
@@ -63,7 +72,7 @@ export const POIS: PoiDef[] = [
   { id: 'tienda', district: 'plaza', at: [-18, 4], kind: 'shop', name: 'Merch Hoyo', prompt: 'Entrar en la tienda', solid: { w: 11, d: 7, h: 6, color: 0xc1272d, side: 'w', sign: 'MERCH' }, sells: ['cinturon_lona', 'cinturon_cuero', 'cinturon_oro', 'cinturon_hoyo', 'zapas_baratas', 'zapas_runner', 'botas_lucha', 'botas_rayo', 'amuleto_pata', 'silla_miniatura', 'colmillo', 'corona_carton', 'maletin_pablo', 'bebida', 'cafe', 'pegatina_suerte'] },
   { id: 'gimnasio', district: 'plaza', at: [18, 4], kind: 'gym', name: 'Gimnasio El Puñetazo', prompt: 'Entrenar', solid: { w: 11, d: 7, h: 6, color: 0x2a5a8a, side: 'e', sign: 'EL PUÑETAZO' } },
   { id: 'casa', district: 'plaza', at: [-13, 15], kind: 'home', name: 'Tu piso', prompt: 'Descansar en casa', solid: { w: 8, d: 6, h: 7, color: 0x8a6a4a, side: 's' } },
-  { id: 'taxi_plaza', district: 'plaza', at: [18, -11], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 'e' } },
+  { id: 'taxi_plaza', district: 'plaza', at: [18, -11], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 2.2, d: 4.4, h: 1.6, color: 0xe8c42a, side: 'e' } },
   { id: 'tablon', district: 'plaza', at: [-9, -11], kind: 'board', name: 'Tablón de misiones', prompt: 'Leer el tablón', solid: { w: 4, d: 1, h: 3, color: 0x6a4a2a } },
   { id: 'fuente', district: 'plaza', at: [0, 0], kind: 'fountain', name: 'Fuente del Hoyo', prompt: 'Mirar la fuente', radius: 3.6 },
   { id: 'story_fichaje', district: 'plaza', at: [0, -11], kind: 'story', name: 'Pablo Motos te espera', prompt: 'Empezar capítulo', chapter: 'fichaje' },
@@ -76,38 +85,38 @@ export const POIS: PoiDef[] = [
   { id: 'macs', district: 'viviendas', at: [14, 14], kind: 'minigame', minigame: 'comilona', name: "Hamburguesería Mac's", prompt: 'Concurso de hamburguesas', solid: { w: 10, d: 6, h: 5, color: 0xe8b42a, side: 'e', sign: "MAC'S" } },
   { id: 'story_garito', district: 'viviendas', at: [-4, -4], kind: 'story', name: 'Petisui te espera en el garito', prompt: 'Empezar capítulo', chapter: 'garito' },
   { id: 'story_azotea', district: 'viviendas', at: [20, -14], kind: 'story', name: 'Escaleras de la azotea', prompt: 'Empezar capítulo', chapter: 'azotea' },
-  { id: 'taxi_viviendas', district: 'viviendas', at: [4, 18], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 's' } },
+  { id: 'taxi_viviendas', district: 'viviendas', at: [4, 18], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 4.4, d: 2.2, h: 1.6, color: 0xe8c42a, side: 's' } },
   // ------------------------------------------------------------------ aldea
   { id: 'tambores', district: 'aldea', at: [0, 0], kind: 'minigame', minigame: 'tambores', name: 'Círculo de tambores', prompt: 'Tocar los tambores', radius: 2.6 },
   { id: 'choza_jefe', district: 'aldea', at: [-12, -8], kind: 'vendor', name: 'Choza del curandero', prompt: 'Comprar remedios', solid: { w: 7, d: 7, h: 4, color: 0xa87a48 }, sells: ['bocata', 'chuleton', 'bebida'] },
-  { id: 'taxi_aldea', district: 'aldea', at: [-4, 18], kind: 'taxi', name: 'Camioneta del pueblo', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0x8a6a3a, side: 's' } },
+  { id: 'taxi_aldea', district: 'aldea', at: [-4, 18], kind: 'taxi', name: 'Camioneta del pueblo', prompt: 'Viajar a otro distrito', solid: { w: 4.4, d: 2.2, h: 1.6, color: 0xe8c42a, side: 's' } },
   // ------------------------------------------------------------------ playa
-  { id: 'pesca', district: 'playa', at: [12, 17], kind: 'minigame', minigame: 'pesca', name: 'Muelle de pesca', prompt: 'Pescar', radius: 2.4 },
-  { id: 'tiki', district: 'playa', at: [-24, -2], kind: 'vendor', name: 'Chiringuito Tiki', prompt: 'Pedir algo al chiringuito', solid: { w: 10, d: 6, h: 5, color: 0x9a7a3a, side: 'w', sign: 'TIKI' }, sells: ['bebida', 'cafe', 'bocata', 'chuleton'] },
-  { id: 'hoguera', district: 'playa', at: [-4, 2], kind: 'heal', name: 'Hoguera de la playa', prompt: 'Sentarte junto al fuego (recuperas 1 h)', radius: 2.4, heal: { cost: 0, minutes: 60, text: 'Descansas junto al fuego y escuchas el mar. Todo parece más fácil.' } },
-  { id: 'taxi_playa', district: 'playa', at: [34, -4], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 'e' } },
+  { id: 'pesca', district: 'playa', at: [12, 39], kind: 'minigame', minigame: 'pesca', name: 'Muelle de pesca', prompt: 'Pescar', radius: 2.4 },
+  { id: 'tiki', district: 'playa', at: [-24, 6], kind: 'vendor', name: 'Chiringuito Tiki', prompt: 'Pedir algo al chiringuito', solid: { w: 10, d: 6, h: 5, color: 0x9a7a3a, side: 'w', sign: 'TIKI' }, sells: ['bebida', 'cafe', 'bocata', 'chuleton'] },
+  { id: 'hoguera', district: 'playa', at: [-4, 14], kind: 'heal', name: 'Hoguera de la playa', prompt: 'Sentarte junto al fuego (recuperas 1 h)', radius: 2.4, heal: { cost: 0, minutes: 60, text: 'Descansas junto al fuego y escuchas el mar. Todo parece más fácil.' } },
+  { id: 'taxi_playa', district: 'playa', at: [34, -6], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 4.4, d: 2.2, h: 1.6, color: 0xe8c42a, side: 'n' } },
   // ------------------------------------------------------------------ manchester
   { id: 'teatro', district: 'manchester', at: [0, -14], kind: 'landmark', name: 'Teatro de Manchester', prompt: 'Admirar el teatro', solid: { w: 22, d: 12, h: 13, color: 0x7a3a3a, sign: 'MANCHESTER' } },
   { id: 'cafe', district: 'manchester', at: [14, 6], kind: 'vendor', name: 'Café Manchester', prompt: 'Tomar algo', solid: { w: 9, d: 6, h: 5, color: 0x5a3a2a, side: 'e', sign: 'CAFÉ' }, sells: ['cafe', 'bocata', 'chuleton'] },
   { id: 'monigote', district: 'manchester', at: [-14, 10], kind: 'photo', name: 'El monigote azul gigante', prompt: 'Hacerte una foto con el monigote', radius: 2.4 },
   { id: 'story_pareja', district: 'manchester', at: [-4, 2], kind: 'story', name: 'Pablo anuncia el Hoyo Tag Champion', prompt: 'Empezar capítulo', chapter: 'pareja' },
-  { id: 'taxi_manchester', district: 'manchester', at: [-18, -6], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 'w' } },
+  { id: 'taxi_manchester', district: 'manchester', at: [-18, -6], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 2.2, d: 4.4, h: 1.6, color: 0xe8c42a, side: 'w' } },
   // ------------------------------------------------------------------ industrial
   { id: 'fabrica', district: 'industrial', at: [0, -9], kind: 'landmark', name: 'Fábrica de la Jaula', prompt: 'Una puerta de acero enorme', solid: { w: 22, d: 12, h: 12, color: 0x5a5a62, sign: 'LA JAULA' } },
   { id: 'story_yosuke', district: 'industrial', at: [0, -2], kind: 'story', name: 'Yosuke te espera en la fábrica', prompt: 'Empezar capítulo', chapter: 'yosuke' },
   { id: 'chatarreria', district: 'industrial', at: [14, 8], kind: 'vendor', name: 'Chatarrería del Mecánico', prompt: 'Mirar las piezas', solid: { w: 9, d: 6, h: 5, color: 0x6a4a3a, side: 'e' }, sells: ['pegatina_suerte', 'amuleto_pata'] },
-  { id: 'taxi_industrial', district: 'industrial', at: [-18, 14], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 'w' } },
+  { id: 'taxi_industrial', district: 'industrial', at: [-18, 14], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 2.2, d: 4.4, h: 1.6, color: 0xe8c42a, side: 'w' } },
   // ------------------------------------------------------------------ torre
   { id: 'torre_lobby', district: 'torre', at: [0, -4], kind: 'tower', name: 'Ascensor de la Torre', prompt: 'Subir a la Torre (supervivencia de 10 pisos)', solid: { w: 24, d: 14, h: 38, color: 0x30384a, sign: 'TORRE MOTOS' }, cond: { ending: true } },
   { id: 'torre_cerrada', district: 'torre', at: [0, -4], kind: 'landmark', name: 'Torre Motos', prompt: 'El ascensor está en mantenimiento hasta que acabe la temporada', solid: { w: 24, d: 14, h: 38, color: 0x30384a, sign: 'TORRE MOTOS' }, cond: { ending: false } },
   { id: 'story_oficina', district: 'torre', at: [-10, 8], kind: 'story', name: 'El despacho de Pablo Motos', prompt: 'Empezar capítulo', chapter: 'oficina' },
   { id: 'story_final', district: 'torre', at: [10, 8], kind: 'story', name: 'El ascensor de cristal', prompt: 'Empezar capítulo', chapter: 'final' },
-  { id: 'taxi_torre', district: 'torre', at: [0, 18], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 's' } },
+  { id: 'taxi_torre', district: 'torre', at: [0, 18], kind: 'taxi', name: 'Parada de taxis', prompt: 'Viajar a otro distrito', solid: { w: 4.4, d: 2.2, h: 1.6, color: 0xe8c42a, side: 's' } },
   // ------------------------------------------------------------------ santiago
   { id: 'estadio', district: 'santiago', at: [0, -9], kind: 'landmark', name: 'Estadio de Santiago', prompt: 'Las puertas del estadio', solid: { w: 28, d: 14, h: 14, color: 0x8a8a92, sign: 'SANTIAGO' } },
   { id: 'story_gauntlet', district: 'santiago', at: [0, 0], kind: 'story', name: 'El Gauntlet de Santiago', prompt: 'Empezar capítulo', chapter: 'gauntlet' },
   { id: 'empanadas', district: 'santiago', at: [14, 8], kind: 'vendor', name: 'Puesto de empanadas', prompt: 'Comprar empanadas', solid: { w: 6, d: 4, h: 4, color: 0xc1272d, side: 'e' }, sells: ['empanada', 'bebida'] },
-  { id: 'taxi_santiago', district: 'santiago', at: [-18, 12], kind: 'taxi', name: 'Estación de Santiago', prompt: 'Viajar a otro distrito', solid: { w: 3, d: 2, h: 3, color: 0xe8c42a, side: 'w' } },
+  { id: 'taxi_santiago', district: 'santiago', at: [-18, 12], kind: 'taxi', name: 'Estación de Santiago', prompt: 'Viajar a otro distrito', solid: { w: 2.2, d: 4.4, h: 1.6, color: 0xe8c42a, side: 'w' } },
 ];
 
 export const STICKERS: StickerDef[] = [
@@ -123,11 +132,11 @@ export const STICKERS: StickerDef[] = [
   { id: 's_ald1', district: 'aldea', at: [14, 6], hint: 'Junto a una choza' },
   { id: 's_ald2', district: 'aldea', at: [-16, 12], hint: 'Entre las hogueras' },
   { id: 's_ald3', district: 'aldea', at: [8, -16], hint: 'Bajo el baobab' },
-  { id: 's_pla1', district: 'playa', at: [-30, 10], hint: 'Entre las palmeras' },
-  { id: 's_pla2', district: 'playa', at: [24, 4], hint: 'Medio enterrada en la arena' },
-  { id: 's_pla3', district: 'playa', at: [-10, 16], hint: 'Cerca de la orilla' },
-  { id: 's_pla4', district: 'playa', at: [38, 12], hint: 'En el extremo de la playa' },
-  { id: 's_pla5', district: 'playa', at: [2, -8], hint: 'Solo se ve de noche, a la luz de la hoguera', cond: { night: true } },
+  { id: 's_pla1', district: 'playa', at: [-30, 18], hint: 'Entre las palmeras' },
+  { id: 's_pla2', district: 'playa', at: [24, 12], hint: 'Medio enterrada en la arena' },
+  { id: 's_pla3', district: 'playa', at: [-10, 30], hint: 'Cerca de la orilla' },
+  { id: 's_pla4', district: 'playa', at: [60, 20], hint: 'En el extremo de la playa' },
+  { id: 's_pla5', district: 'playa', at: [2, 12], hint: 'Solo se ve de noche, a la luz de la hoguera', cond: { night: true } },
   { id: 's_man1', district: 'manchester', at: [-10, -2], hint: 'Junto al teatro' },
   { id: 's_man2', district: 'manchester', at: [8, 18], hint: 'Detrás del café' },
   { id: 's_man3', district: 'manchester', at: [18, -14], hint: 'En una esquina del barrio' },
@@ -152,7 +161,7 @@ export const GRAFFITI: GraffitiDef[] = [
   { id: 'g_ind1', district: 'industrial', at: [-8, 6], name: '«SIN SALIDA»', blurb: 'La jaula dibujada con spray, con un luchador dentro.' },
   { id: 'g_ind2', district: 'industrial', at: [12, -14], name: '«LA JAULA TE ESPERA»', blurb: 'Y una flecha que apunta a la fábrica.' },
   { id: 'g_man1', district: 'manchester', at: [-6, 14], name: '«KENT 1 — PETISUI 0»', blurb: 'Alguien no ha aceptado el resultado.' },
-  { id: 'g_pla1', district: 'playa', at: [20, -6], name: '«ELSO ES EL MEJOR»', blurb: 'Escrito en la arena. La marea lo está borrando.' },
+  { id: 'g_pla1', district: 'playa', at: [20, 6], name: '«ELSO ES EL MEJOR»', blurb: 'Escrito en la arena. La marea lo está borrando.' },
   { id: 'g_san1', district: 'santiago', at: [-4, 14], name: '«CHI-CHI-CHI, LE-LE-LE»', blurb: 'Tres colores y una estrella.' },
 ];
 

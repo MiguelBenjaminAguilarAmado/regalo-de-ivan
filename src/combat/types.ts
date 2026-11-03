@@ -1,5 +1,5 @@
 export type Difficulty = 'facil' | 'intermedia' | 'dificil';
-export type ArenaId = 'matamoros' | 'manchester' | 'tribu' | 'garito' | 'jaula' | 'azotea' | 'playa' | 'oficina' | 'ascensor' | 'santiago';
+export type ArenaId = 'matamoros' | 'manchester' | 'tribu' | 'garito' | 'jaula' | 'azotea' | 'playa' | 'oficina' | 'ascensor' | 'santiago' | 'callejon';
 export type WinReason = 'ko' | 'pin' | 'rendicion' | 'fuera' | 'tiempo';
 
 export type MoveKind = 'strike' | 'grab' | 'finisher' | 'taunt';

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import type { Layout } from './layout';
+import type { Layout, Road } from './layout';
+import { box, merge } from './CityMeshes';
 
 /** ===== Vida de la ciudad de Hoyo: peatones, coches, público y bocadillos de diálogo (todo instanciado y barato) ===== */
 
@@ -28,9 +29,8 @@ interface Person {
   lookYaw: number;
 }
 
-interface Car { road: number; s: number; dir: 1 | -1; speed: number; v: number; turn: number; x: number; z: number; yaw: number; tx: number; tz: number }
+interface Car { from: number; to: number; road: number; speed: number; v: number; x: number; z: number; yaw: number; tx: number; tz: number; path: { x: number; z: number }[]; taxi: boolean }
 
-interface Road { x1: number; z1: number; x2: number; z2: number; w: number }
 
 export interface CityLifeOpts {
   layout: Layout;
@@ -45,8 +45,6 @@ export interface CityLifeOpts {
   crowds: { x: number; z: number; r: number; n: number }[];
 }
 
-/** Dos segmentos de calle que salen de la plaza; la plaza circular mide unos 22 m de radio */
-const PLAZA_R = 24;
 
 export class CityLife {
   group = new THREE.Group();
@@ -102,25 +100,34 @@ export class CityLife {
   private buildNav() {
     const l = this.o.layout, R = rngOf(4242);
     const pts: { x: number; z: number }[] = [];
-    const add = (x: number, z: number) => { if (!l.blocked(x, z, 0.6) && !pts.some((p) => Math.hypot(p.x - x, p.z - z) < 3)) pts.push({ x, z }); };
-    // aceras a los dos lados de cada calle
+    const bins = new Map<string, number[]>();
+    const bk = (x: number, z: number) => Math.floor(x / 12) + ',' + Math.floor(z / 12);
+    const add = (x: number, z: number, minD = 3) => {
+      if (l.blocked(x, z, 0.6)) return;
+      const [gx, gz] = [Math.floor(x / 12), Math.floor(z / 12)];
+      for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) for (const k of bins.get((gx + i) + ',' + (gz + j)) ?? []) if (Math.hypot(pts[k].x - x, pts[k].z - z) < minD) return;
+      const id = pts.length; pts.push({ x, z });
+      const key = bk(x, z); const arr = bins.get(key); if (arr) arr.push(id); else bins.set(key, [id]);
+    };
+    // aceras a los dos lados de cada calle; por las callejuelas, por el centro
     for (const r of this.roads) {
       const L = Math.hypot(r.x2 - r.x1, r.z2 - r.z1), dx = (r.x2 - r.x1) / L, dz = (r.z2 - r.z1) / L;
-      for (let s = PLAZA_R - 6; s < L; s += 7) for (const side of [-1, 1]) add(r.x1 + dx * s - dz * side * (r.w / 2 + 1.2), r.z1 + dz * s + dx * side * (r.w / 2 + 1.2));
+      if (r.kind === 'alley') { for (let s2 = 2; s2 < L; s2 += 6) add(r.x1 + dx * s2, r.z1 + dz * s2); continue; }
+      for (let s2 = 3; s2 < L; s2 += 8) for (const side of [-1, 1]) add(r.x1 + dx * s2 - dz * side * (r.w / 2 + 1.1), r.z1 + dz * s2 + dx * side * (r.w / 2 + 1.1));
     }
-    // plaza: dos anillos
-    for (let a = 0; a < 16; a++) { const ang = (a / 16) * TAU; add(Math.cos(ang) * 8, Math.sin(ang) * 8); add(Math.cos(ang + 0.2) * 16, Math.sin(ang + 0.2) * 16); }
-    // puntos sueltos por toda la ciudad
-    for (let i = 0; i < 520 && pts.length < 230; i++) add((R() - 0.5) * l.worldSize * 1.9, (R() - 0.5) * l.worldSize * 1.9);
-    this.nodes = pts.map((p) => ({ ...p, nb: [] }));
-    for (let i = 0; i < this.nodes.length; i++) for (let j = i + 1; j < this.nodes.length; j++) {
-      const a = this.nodes[i], b = this.nodes[j];
-      const d = Math.hypot(a.x - b.x, a.z - b.z);
-      if (d > 24 || !this.clearLine(a.x, a.z, b.x, b.z)) continue;
-      a.nb.push(j); b.nb.push(i);
+    // plazas, parques y playa
+    for (const p of l.pads) if (p.kind !== 'block') for (let i = 0; i < Math.min(30, (p.w * p.d) / 90); i++) add(p.x + (R() - 0.5) * (p.w - 3), p.z + (R() - 0.5) * (p.d - 3), 4);
+    for (let a2 = 0; a2 < 16; a2++) { const ang = (a2 / 16) * TAU; add(Math.cos(ang) * 8, Math.sin(ang) * 8); add(Math.cos(ang + 0.2) * 16, Math.sin(ang + 0.2) * 16); }
+    this.nodes = pts.map((p) => ({ ...p, nb: [] as number[] }));
+    for (let i = 0; i < pts.length; i++) {
+      const [gx, gz] = [Math.floor(pts[i].x / 12), Math.floor(pts[i].z / 12)];
+      for (let a2 = -1; a2 <= 1; a2++) for (let b2 = -1; b2 <= 1; b2++) for (const j of bins.get((gx + a2) + ',' + (gz + b2)) ?? []) {
+        if (j <= i) continue;
+        const A = this.nodes[i], B = this.nodes[j];
+        if (Math.hypot(A.x - B.x, A.z - B.z) > 13 || !this.clearLine(A.x, A.z, B.x, B.z)) continue;
+        A.nb.push(j); B.nb.push(i);
+      }
     }
-    // fuera los puntos aislados
-    for (const n of this.nodes) if (!n.nb.length) n.nb = [];
   }
 
   private pickNode(R: () => number) {
@@ -184,29 +191,57 @@ export class CityLife {
       m.castShadow = shadow; m.receiveShadow = false; m.frustumCulled = false;
       this.group.add(m); this.carIm[name] = m; return m;
     };
-    const body = mk('body', new THREE.BoxGeometry(1.8, 0.7, 4.0), std(0xffffff, 0.35, 0.3), n);
-    mk('cabin', new THREE.BoxGeometry(1.6, 0.6, 2.1), std(0x1a2230, 0.2, 0.5), n);
-    const wheel = new THREE.CylinderGeometry(0.34, 0.34, 0.28, 10); wheel.rotateZ(Math.PI / 2);
+    // carrocería con perfil (bajos + capó + techo): una sola malla instanciada; ventanas oscuras aparte
+    const bodyGeo = merge([box(1.8, 0.55, 4.1, 0, 0.6, 0, 0xffffff), box(1.78, 0.2, 1.1, 0, 0.95, 1.35, 0xffffff), box(1.78, 0.2, 0.9, 0, 0.95, -1.5, 0xffffff), box(1.58, 0.08, 1.9, 0, 1.55, -0.2, 0xffffff), box(1.86, 0.16, 0.14, 0, 0.42, 2.08, 0x9a9aa2), box(1.86, 0.16, 0.14, 0, 0.42, -2.08, 0x9a9aa2)])!;
+    const body = mk('body', bodyGeo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.32, metalness: 0.35 }), n);
+    mk('cabin', new THREE.BoxGeometry(1.55, 0.5, 1.85), std(0x1a2230, 0.1, 0.6), n);
+    const wheel = new THREE.CylinderGeometry(0.34, 0.34, 0.28, 12); wheel.rotateZ(Math.PI / 2);
     mk('wheels', wheel, std(0x111114, 0.9, 0), n * 4, false);
     mk('lights', new THREE.BoxGeometry(0.36, 0.16, 0.06), new THREE.MeshBasicMaterial({ color: 0xfff4c8 }), n * 2, false);
     mk('tails', new THREE.BoxGeometry(0.36, 0.14, 0.06), new THREE.MeshBasicMaterial({ color: 0x8a1010 }), n * 2, false);
-    mk('roof', new THREE.BoxGeometry(0.7, 0.22, 0.32), new THREE.MeshBasicMaterial({ color: 0xffe25a }), n, false);
+    mk('roof', new THREE.BoxGeometry(0.72, 0.26, 0.28), new THREE.MeshBasicMaterial({ color: 0xffe25a }), n, false);
+    // franja de cuadros de los taxis
+    mk('check', merge(Array.from({ length: 16 }, (_, i) => [box(0.02, 0.1, 0.24, -0.91, 0.66, -1.8 + i * 0.24, i % 2 ? 0x141418 : 0xf5f5f0), box(0.02, 0.1, 0.24, 0.91, 0.66, -1.8 + i * 0.24, i % 2 ? 0xf5f5f0 : 0x141418)]).flat())!, new THREE.MeshBasicMaterial({ vertexColors: true }), n, false);
     const c = new THREE.Color();
+    const g = this.o.layout.graph;
+    const usable = g.edges.filter((e) => this.o.roadOpen(e.road));
     for (let i = 0; i < n; i++) {
       body.setColorAt(i, c.setHex(CARS[i % CARS.length]));
-      const road = i % Math.max(1, this.roads.length);
-      const r = this.roads[road];
-      const L = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
-      this.cars.push({ road, s: PLAZA_R + R() * Math.max(1, L - PLAZA_R - 8), dir: R() < 0.5 ? 1 : -1, speed: 6 + R() * 3, v: 0, turn: -1, x: 0, z: 0, yaw: 0, tx: 0, tz: 1 });
+      const e = usable[Math.floor(R() * usable.length)] ?? g.edges[0];
+      const [from, to] = R() < 0.5 ? [e.a, e.b] : [e.b, e.a];
+      const car: Car = { from, to, road: e.road, x: 0, z: 0, yaw: 0, tx: 0, tz: 1, v: 0, speed: 6.5 + R() * 3.5, path: [], taxi: CARS[i % CARS.length] === 0xe8c42a };
+      this.routeCar(car, true, R());
+      this.cars.push(car);
     }
     if (body.instanceColor) body.instanceColor.needsUpdate = true;
   }
 
-  private roadEnd(ri: number) {
-    const r = this.roads[ri];
-    const L = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
-    // si el distrito está cerrado, los coches dan la vuelta antes de la valla
-    return this.o.roadOpen(ri) ? L - 4 : L - 32;
+  /** Carril derecho del tramo from→to: dos puntos (entrada y salida del tramo) */
+  private lanePoints(from: number, to: number, road: number): { x: number; z: number }[] {
+    const g = this.o.layout.graph, A = g.nodes[from], B = g.nodes[to], r = this.roads[road];
+    const L = Math.hypot(B.x - A.x, B.z - A.z) || 1, ux = (B.x - A.x) / L, uz = (B.z - A.z) / L;
+    const lane = Math.max(1.6, r.w * 0.27), rx = -uz, rz = ux;
+    const m = Math.min(5, L * 0.3);
+    return [{ x: A.x + ux * m + rx * lane, z: A.z + uz * m + rz * lane }, { x: B.x - ux * m + rx * lane, z: B.z - uz * m + rz * lane }];
+  }
+
+  /** Elige el siguiente tramo al llegar a un cruce (sin dar media vuelta si hay otra opción) */
+  private routeCar(c: Car, init = false, t0 = 0) {
+    const g = this.o.layout.graph;
+    if (!init) {
+      const opts = g.edges.filter((e) => (e.a === c.to || e.b === c.to) && this.o.roadOpen(e.road) && !(e.a === c.from && e.b === c.to) && !(e.b === c.from && e.a === c.to));
+      const e = opts.length ? opts[Math.floor(Math.random() * opts.length)] : g.edges.find((x) => (x.a === c.to && x.b === c.from) || (x.b === c.to && x.a === c.from))!;
+      const next = e.a === c.to ? e.b : e.a;
+      c.from = c.to; c.to = next; c.road = e.road;
+    }
+    const pts = this.lanePoints(c.from, c.to, c.road);
+    c.path = pts;
+    if (init) {
+      const p = pts[0], q = pts[1];
+      c.x = p.x + (q.x - p.x) * t0; c.z = p.z + (q.z - p.z) * t0;
+      c.yaw = Math.atan2(q.x - p.x, q.z - p.z); c.tx = Math.sin(c.yaw); c.tz = Math.cos(c.yaw);
+      c.path = [q];
+    }
   }
 
   /** ¿Choca el jugador con algún coche? */
@@ -360,47 +395,32 @@ export class CityLife {
   }
 
   private stepCar(c: Car, dt: number, px: number, pz: number) {
-    const r = this.roads[c.road];
-    const L = Math.hypot(r.x2 - r.x1, r.z2 - r.z1), dx = (r.x2 - r.x1) / L, dz = (r.z2 - r.z1) / L;
-    const end = this.roadEnd(c.road);
-    const lane = 1.7;
-    if (c.turn >= 0) {
-      // cambio de sentido en semicírculo
-      c.turn += dt * 1.6;
-      const s = c.dir === 1 ? end : PLAZA_R;
-      const tx = dx * c.dir, tz = dz * c.dir, rx = -tz, rz = tx;
-      const th = Math.min(Math.PI, c.turn);
-      const bx = r.x1 + dx * s, bz = r.z1 + dz * s;
-      c.x = bx + rx * lane * Math.cos(th) + tx * lane * Math.sin(th);
-      c.z = bz + rz * lane * Math.cos(th) + tz * lane * Math.sin(th);
-      c.yaw = Math.atan2(tx, tz) + th;
-      c.tx = Math.sin(c.yaw); c.tz = Math.cos(c.yaw);
-      if (c.turn >= Math.PI) { c.turn = -1; c.dir = (c.dir === 1 ? -1 : 1); c.s = s; }
-      return;
-    }
-    const tx = dx * c.dir, tz = dz * c.dir;
-    // frenar si el jugador está delante
-    const fx = px - c.x, fz = pz - c.z;
-    const ahead = fx * tx + fz * tz, side = -fx * tz + fz * tx;
-    const want = ahead > 0 && ahead < 6.5 && Math.abs(side) < 1.6 ? 0 : c.speed;
-    c.v += (want - c.v) * (1 - Math.exp(-(want < c.v ? 6 : 1.5) * dt));
-    c.s += c.v * dt * c.dir;
-    if (c.dir === 1 && c.s >= end) { c.s = end; c.turn = 0; }
-    if (c.dir === -1 && c.s <= PLAZA_R) { c.s = PLAZA_R; c.turn = 0; }
-    c.s = clamp(c.s, PLAZA_R, Math.max(PLAZA_R, end));
-    const rx = -tz, rz = tx;
-    c.x = r.x1 + dx * c.s + rx * lane; c.z = r.z1 + dz * c.s + rz * lane;
-    c.yaw = Math.atan2(tx, tz); c.tx = tx; c.tz = tz;
+    let tgt = c.path[0];
+    if (!tgt) { this.routeCar(c); tgt = c.path[0]; }
+    const dx = tgt.x - c.x, dz = tgt.z - c.z, d = Math.hypot(dx, dz);
+    if (d < 2.2) { c.path.shift(); if (!c.path.length) this.routeCar(c); return; }
+    // dirección: gira hacia el punto siguiente (giros suaves en los cruces)
+    const want = Math.atan2(dx, dz);
+    let df = want - c.yaw; while (df > Math.PI) df -= TAU; while (df < -Math.PI) df += TAU;
+    c.yaw += clamp(df, -2.4 * dt, 2.4 * dt);
+    c.tx = Math.sin(c.yaw); c.tz = Math.cos(c.yaw);
+    // frenar: jugador delante, otro coche delante en el mismo sentido o curva cerrada
+    let want_v = c.speed * (Math.abs(df) > 0.6 ? 0.45 : 1);
+    const ahead = (x: number, z: number, len: number, wid: number) => { const fx = x - c.x, fz = z - c.z; const f = fx * c.tx + fz * c.tz, s2 = -fx * c.tz + fz * c.tx; return f > 0 && f < len && Math.abs(s2) < wid; };
+    if (ahead(px, pz, 7, 1.7)) want_v = 0;
+    else for (const o of this.cars) if (o !== c && o.tx * c.tx + o.tz * c.tz > 0.6 && ahead(o.x, o.z, 7.5, 1.3)) { want_v = 0; break; }
+    c.v += (want_v - c.v) * (1 - Math.exp(-(want_v < c.v ? 6 : 1.4) * dt));
+    c.x += c.tx * c.v * dt; c.z += c.tz * c.v * dt;
   }
 
   private poseCars() {
     const B = this.carIm;
     this.cars.forEach((c, i) => {
       const root = this.root.compose(this.v.set(c.x, 0, c.z), this.q.setFromAxisAngle(UP, c.yaw), this.s.set(1, 1, 1));
-      this.part(B.body, i, root, 0, 0.62, 0);
-      this.part(B.cabin, i, root, 0, 1.25, -0.25);
-      const taxi = CARS[i % CARS.length] === 0xe8c42a;
-      if (taxi) this.part(B.roof, i, root, 0, 1.66, -0.25); else { this.m4.makeScale(0, 0, 0); B.roof.setMatrixAt(i, this.m4); }
+      this.part(B.body, i, root, 0, 0, 0);
+      this.part(B.cabin, i, root, 0, 1.26, -0.2);
+      if (c.taxi) { this.part(B.roof, i, root, 0, 1.72, -0.2); this.part(B.check, i, root, 0, 0, 0); }
+      else { this.m4.makeScale(0, 0, 0); B.roof.setMatrixAt(i, this.m4); B.check.setMatrixAt(i, this.m4); }
       const spin = this.time * c.v * 2.9;
       let k = 0;
       for (const sx of [-0.88, 0.88]) for (const sz of [-1.3, 1.3]) this.part(B.wheels, i * 4 + k++, root, sx, 0.34, sz, spin);

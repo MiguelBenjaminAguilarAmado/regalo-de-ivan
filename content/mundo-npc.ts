@@ -121,7 +121,7 @@ export const NPCS: NpcDef[] = [
   },
   // =================================================================== PLAYA
   {
-    id: 'elso', district: 'playa', at: [-8, 4], fighter: true, yaw: Math.PI / 2,
+    id: 'elso', district: 'playa', at: [-8, 10], fighter: true, yaw: Math.PI / 2,
     talks: [
       talk({ notChapter: 'yosuke' }, 'elso', L('elso', 'Aquí vengo a pensar. A veces a pegar. Hoy, a pensar. Dicen que soy el campeón Femboy… pero no se me nota.')),
       talk({ chapter: 'yosuke', notChapter: 'oficina' }, 'elso', L('elso', 'Gracias por lo de Yosuke. En serio. Aún me escuece la chilena, pero respiro mejor.')),
@@ -130,22 +130,22 @@ export const NPCS: NpcDef[] = [
     quips: ['El mar escucha mejor que Pablo.', 'Mi golpe femboy da KO. A veces a mí también.', 'Hay una playa en Honduras como esta. Se parecen. Cambia la gente.'],
   },
   {
-    id: 'perro cheetos', district: 'playa', at: [22, 0], fighter: true, yaw: Math.PI,
+    id: 'perro cheetos', district: 'playa', at: [22, 8], fighter: true, yaw: Math.PI,
     talks: [talk(undefined, 'perro cheetos', L('perro cheetos', '¡Guau! Soy Perro Cheetos, mejor debut del Hoyo. ¿Tienes cheetos? Los tengo todos contados.'))],
     quips: ['Entré al Hoyo en coche con Snoop Dogg. Tú, a pie. Se nota.', 'Me encanta la playa: hay arena para enterrar cosas.', 'Si me retas, ¡yo muerdo!'],
   },
   {
-    id: 'pescador', district: 'playa', at: [10, 14], yaw: Math.PI,
+    id: 'pescador', district: 'playa', at: [10, 36], yaw: Math.PI,
     talks: [talk({ notFlag: 'pescador_hola' }, 'pescador', L('pescador', 'Llevo treinta años aquí y diez pescados. Pero no me quejo: el mar es paciente. Tú, no. Pasa por el muelle y pesca.'))],
     quips: ['El pescado fresco te da vida para el próximo combate. Pesca uno.', 'Hay que esperar a que pique. Y pulsar justo cuando se hunde el corcho.', 'Hoy no pican. Ayer sí. Mañana, ya veremos.'],
   },
   {
-    id: 'barman', district: 'playa', at: [-20, 2], yaw: Math.PI / 2,
+    id: 'barman', district: 'playa', at: [-20, 8], yaw: Math.PI / 2,
     talks: [talk({ notFlag: 'barman_hola' }, 'barman', L('barman', 'Bienvenido al Tiki. Cócteles con sombrilla y un café que despierta muertos. ¿Qué te pongo?'))],
     quips: ['Si bebes demasiado, te dejo dormir bajo la barra. Cobro extra.', 'Elso viene todos los días. Pide una limonada y llora.', 'De noche, la hoguera tiene magia.'],
   },
   {
-    id: 'pepe the gay dragon', district: 'playa', at: [30, -8], fighter: true, yaw: Math.PI,
+    id: 'pepe the gay dragon', district: 'playa', at: [30, 2], fighter: true, yaw: Math.PI,
     alt: { cond: { chapter: 'oficina' }, district: 'torre', at: [8, 12] },
     talks: [talk(undefined, 'pepe the gay dragon', L('pepe the gay dragon', 'Soy un unicornio. Un unicornio muy majestuoso. Lo digo yo, que soy el unicornio.'))],
     quips: ['El cuerno es de verdad. Pregúntale a Petisui.', 'Me he vuelto a ir con un jefe nuevo. Esta vez no hay letra pequeña.', 'Un solo golpe. Un solo cuerno.'],

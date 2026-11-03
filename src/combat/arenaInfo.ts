@@ -100,4 +100,11 @@ ARENA_INFO.santiago = {
   rules: { ring: true, ropeBreak: true, refSees: true, countOut: true, mob: false, radius: null, blackout: true },
 };
 
+ARENA_INFO.callejon = {
+  name: 'Callejón de Hoyo', upper: 'EL CALLEJÓN DE HOYO',
+  desc: 'El escenario de los combates callejeros de la ciudad: un círculo de tiza entre paredes de ladrillo, de noche · sin ring ni árbitro que mire',
+  music: 'garito', pro: false,
+  rules: { ring: false, ropeBreak: false, refSees: false, countOut: false, mob: false, radius: 7.2 },
+};
+
 export const ARENA_IDS = Object.keys(ARENA_INFO) as ArenaId[];

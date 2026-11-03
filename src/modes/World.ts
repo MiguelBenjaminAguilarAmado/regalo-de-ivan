@@ -53,6 +53,8 @@ export interface WorldProgress {
   records: Record<string, number>;
   flags: Flags;
   pos?: { x: number; z: number; yaw: number };
+  /** Dónde está aparcada la moto de Chema */
+  moto?: { x: number; z: number; yaw: number };
   visited: string[];
   /** Mejora de un solo combate que se ha activado antes de pelear */
   pending: { hp: number; mom: number; power: number };
@@ -89,6 +91,15 @@ export function addTime(p: WorldProgress, minutes: number) {
   p.time += minutes;
   p.stats.days = Math.max(p.stats.days, dayOf(p));
   return dayOf(p) - before; // días que han pasado
+}
+
+/** Duerme hasta la próxima vez que el reloj marque `hour` (0-24); devuelve los minutos dormidos */
+export function sleepUntilHour(p: WorldProgress, hour: number) {
+  const m = p.time % DAY_MIN;
+  const target = Math.round(hour * 60) % DAY_MIN;
+  const add = m < target ? target - m : DAY_MIN - m + target;
+  addTime(p, add);
+  return add;
 }
 
 /** Duerme hasta las 8:00 del día siguiente (o de hoy si aún es de madrugada) */
