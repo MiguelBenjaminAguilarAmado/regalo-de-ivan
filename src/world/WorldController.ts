@@ -15,13 +15,14 @@ import { el, clear } from '../ui/dom';
 import { WorldUI, type MapData } from '../ui/WorldUI';
 import { WorldView, type Target, type WorldBridge } from './WorldView';
 import { MINI_INFO, runMinigame, type MiniId } from './minigames';
+import { DAY_MIN } from '../modes/World';
 import { applyChoice, chapterState, fightsFor, lineVisible, newProgress, nextChapter, scenesFor, type Flags, type StoryChapter, type StoryChoice, type StoryProgress, type StoryScene } from '../modes/Story';
 import { scaleOpponent } from '../modes/Survival';
 import { simulateMatch } from '../modes/simulate';
 import {
   ATTRS, ATTR_MAX, GYM, GYM_HOURS, STICKER_MILESTONES, STREET_COOLDOWN, activeQuests, addMoney, addTime, addXp, applyBonus, betOdds, betPayout, bonusOf,
   buyItem, canChallenge, clockText, collectSticker, condHolds, dayOf, districtOpen, doneQuests, equipItem, giveReward, gymCost, hourOf, isNight,
-  migrateWorld, milestoneFor, questState, questsAvailable, reportEvent, sleepUntilMorning, startQuest, streetDifficulty, streetReward, trainAttr, useItem, xpForLevel,
+  migrateWorld, milestoneFor, questState, questsAvailable, reportEvent, startQuest, streetDifficulty, streetReward, trainAttr, useItem, xpForLevel,
   type Ctx, type Item, type QuestDef, type Slot, type WorldEvent, type WorldProgress,
 } from '../modes/World';
 import type { NpcDef, PoiDef } from './types';
@@ -155,6 +156,9 @@ export class WorldController {
     this.view.refresh();
     const sp = opts.spawn ?? this.progress.pos ?? { x: SPAWN[0], z: SPAWN[1], yaw: Math.PI };
     this.view.teleport(sp.x, sp.z, sp.yaw);
+    // la moto: donde la dejaste o, la primera vez, aparcada junto a tu piso
+    const mp = this.progress.moto ?? (() => { const c = this.view!.layout.spots['poi:casa']; return { x: c.x + 3, z: c.z + 1.5, yaw: Math.PI / 2 }; })();
+    this.view.placeMoto(mp.x, mp.z, mp.yaw);
     this.active = true; this.busy = false;
     this.ui.show();
     g.input.enabled = true; g.input.reset();
@@ -190,7 +194,8 @@ export class WorldController {
   /** Sale del mundo (para combatir, empezar un capítulo o volver al menú) */
   leave(save = true) {
     if (!this.active) return;
-    if (save && this.view) this.progress.pos = { x: this.view.px, z: this.view.pz, yaw: this.view.yaw };
+    if (this.view?.riding) this.view.dismount();
+    if (save && this.view) { this.progress.pos = { x: this.view.px, z: this.view.pz, yaw: this.view.yaw }; this.progress.moto = this.view.motoPos ?? this.progress.moto; }
     this.detachInput();
     this.ui.hide();
     this.view?.dispose(); this.view = null;
@@ -236,8 +241,16 @@ export class WorldController {
     let mx = 0, mz = 0, run = false, act = false;
     if (!this.busy) {
       const inp = g.input.sample(view.rig as unknown as CameraRig);
-      mx = inp.mx; mz = inp.mz; run = inp.run; act = inp.taunt;
+      // E (teclado) interactúa; con mando se usa A (lo gestiona pad())
+      mx = inp.mx; mz = inp.mz; run = inp.run; act = inp.taunt && g.input.lastDevice !== 'mando';
     } else g.input.reset();
+    // stick derecho: cámara
+    const pad = g.input.activePad();
+    if (pad && !view.inScene) {
+      const dz = (v: number) => (Math.abs(v) < 0.15 ? 0 : v);
+      const rx = dz(pad.axes[2] ?? 0), ry = dz(pad.axes[3] ?? 0);
+      if (rx || ry) view.rotateCamera(-rx * dt * 2.6, ry * dt * 1.4);
+    }
     view.update(dt, mx, mz, run, !this.busy);
     if (!this.busy) {
       const dm = dt * 2; // 1 minuto de juego cada 0,5 s
@@ -297,8 +310,10 @@ export class WorldController {
       const s = view.layout.spots[key];
       if (s) markers.push({ x: s.x, z: s.z, kind: mk ? 'quest' : 'npc', label: this.bridge.npcName(n.id) });
     }
+    const mp = view.motoPos;
+    if (mp && !view.riding) markers.push({ x: mp.x, z: mp.z, kind: 'moto', label: 'Tu moto' });
     return {
-      worldSize: 126,
+      worldSize: view.layout.worldSize,
       roads: view.layout.roads,
       districts: DISTRICTS.map((d) => ({ id: d.id, name: d.name, cx: d.center[0], cz: d.center[1], w: d.size[0], d: d.size[1], open: this.bridge.isOpen(d.id), color: '#' + d.ground.toString(16).padStart(6, '0') })),
       player: { x: view.px, z: view.pz, yaw: view.yaw },
@@ -320,6 +335,7 @@ export class WorldController {
     if (t.kind === 'npc') return `Hablar con ${t.label}`;
     if (t.kind === 'poi') return t.def.prompt;
     if (t.kind === 'graffiti') return `Hacer una foto: ${t.label}`;
+    if (t.kind === 'moto') return this.view?.riding ? `Bajar de la moto · ${this.view.speedKmh} km/h` : 'Subir a la moto';
     return '';
   }
 
@@ -331,6 +347,7 @@ export class WorldController {
   playScenes(scenes: StoryScene[], done: () => void, opts: { story?: boolean } = {}) {
     const list = [...scenes];
     if (!list.length) { done(); return; }
+    if (this.view?.riding) { this.view.dismount(); this.progress.moto = this.view.motoPos ?? undefined; }
     this.busy = true;
     this.ui.closeModal();
     this.ui.setCinema(true);
@@ -409,6 +426,11 @@ export class WorldController {
   // ------------------------------------------------------------------ interacción
   interact(t: Target | null) {
     if (this.busy || !t) return;
+    if (t.kind === 'moto') {
+      if (this.view?.riding) { this.view.dismount(); this.progress.moto = this.view.motoPos ?? undefined; Audio.sfx('click'); }
+      else { this.view?.mount(); Audio.sfx('ready'); if (!this.progress.flags.moto_tip) { this.progress.flags.moto_tip = true; this.ui.toast('🏍 En moto: dirección con el stick / WASD, Shift o RT para acelerar a tope, E / A para bajarte.', 'gold'); } }
+      return;
+    }
     if (t.kind === 'npc') this.talkMenu(t.def);
     else if (t.kind === 'graffiti') this.photo(t.id);
     else if (t.kind === 'poi') this.usePoi(t.def);
@@ -564,7 +586,8 @@ export class WorldController {
     this.progress.pending = { hp: 0, mom: 0, power: 0 };
     const first = !this.progress.cards.includes(npc.id);
     this.fight = { npc: npc.id, first };
-    const arena = this.arenaFor();
+    // los combates callejeros se pelean en el callejón de Hoyo
+    const arena: import('../combat/types').ArenaId = 'callejon';
     const d = this.view?.district ? DIST_MAP.get(this.view.district) : null;
     const opts: BattleOpts = { p, c, arena, difficulty: diff, startMom, objective: `Gana el combate callejero contra ${c.name}`, label: `COMBATE CALLEJERO · ${(d?.name ?? 'HOYO').toUpperCase()}` };
     this.launch(opts);
@@ -771,11 +794,74 @@ export class WorldController {
     this.open('Tu piso', [
       el('p', {}, `Son las ${clockText(w)} del día ${dayOf(w)}. En casa puedes descansar y guardar la partida.`),
       el('div', { class: 'wlist' }, [
-        this.row('Dormir hasta las 8:00', 'El tiempo pasa; el mundo sigue su vida. Recuperas el ánimo.', 'Dormir', () => { sleepUntilMorning(w); this.ui.closeModal(); this.ui.toast('Duermes como un campeón. Es una nueva mañana.', 'info'); this.report({ t: 'sleep' }); }),
+        this.row('Cama', 'Echa una siesta o duerme hasta la hora que quieras. Dormir bien te da ventaja en el próximo combate.', 'Dormir…', () => this.sleepPanel()),
         this.row('Guardar partida', 'Se guarda sola cada pocos segundos, pero por si acaso.', 'Guardar', () => { if (this.view) w.pos = { x: this.view.px, z: this.view.pz, yaw: this.view.yaw }; this.persist(); this.ui.toast('Partida guardada.', 'good'); }),
-        this.row('Armario', 'Cambia tu traje y mira tu equipo.', 'Abrir', () => { this.ui.closeModal(); this.inventoryPanel(); }),
+        this.row('Armario', 'Cambia de traje y de equipo y mírate en el espejo.', 'Abrir', () => this.wardrobePanel()),
       ]),
     ]);
+  }
+
+  /** Menú de dormir: siesta o hasta una hora concreta, con animación del reloj */
+  private sleepPanel() {
+    const w = this.progress;
+    const now = w.time % DAY_MIN;
+    const until = (h: number) => { const t = Math.round(h * 60); return now < t ? t - now : DAY_MIN - now + t; };
+    const opts: [string, string, number][] = [
+      ['Siesta corta', '1 hora. Para despejarse.', 60],
+      ['Hasta el mediodía', 'Despiertas a las 12:00.', until(12)],
+      ['Hasta la tarde', 'Despiertas a las 18:00.', until(18)],
+      ['Hasta la noche', 'Despiertas a las 22:00: abre el garito y salen otros vecinos.', until(22)],
+      ['Hasta mañana', 'Despiertas a las 8:00 como nuevo.', until(8)],
+    ];
+    const rows = opts.map(([t, sub, mins]) => this.row(t, `${sub} (${Math.floor(mins / 60)} h ${mins % 60 ? (mins % 60) + ' min' : ''})`, 'Dormir', () => void this.sleep(mins)));
+    this.open('A dormir', [el('p', {}, `Son las ${clockText(w)} del día ${dayOf(w)}. Si duermes 6 horas o más, empiezas el próximo combate descansado (+10 % de vida).`), el('div', { class: 'wlist' }, rows)]);
+  }
+
+  private async sleep(mins: number) {
+    const w = this.progress;
+    this.ui.closeModal();
+    this.busy = true;
+    const from = w.time % DAY_MIN;
+    Audio.sfx('click');
+    await this.ui.sleepAnim(from, mins);
+    const days = addTime(w, mins);
+    if (mins >= 360) { w.pending.hp = Math.max(w.pending.hp, 10); this.ui.toast('Duermes como un campeón: próximo combate con +10 % de vida.', 'good'); }
+    else this.ui.toast('Una siestecita. Ya estás más despejado.', 'info');
+    if (days > 0) this.ui.toast(`Amanece el día ${dayOf(w)}`, 'gold');
+    this.busy = false;
+    this.persist();
+    this.report({ t: 'sleep' });
+  }
+
+  /** Armario: traje y equipo con Chema en primer plano girando; los cambios se ven al momento */
+  wardrobePanel() {
+    const w = this.progress;
+    if (this.view?.riding) this.view.dismount();
+    this.view?.wardrobeCam(true);
+    this.ui.setCinema(true);
+    const render = () => {
+      const f = ROSTER.find((r) => r.id === 'chema')!;
+      const skins = (f.skins ?? []).filter((s) => !s.unlock || this.g.save.achievements[s.unlock.achievement]);
+      const cur = this.g.save.skins?.['chema'] ?? '';
+      const setSkin = (id: string) => { this.g.save.skins = { ...(this.g.save.skins ?? {}), chema: id }; refresh(); };
+      const chips = (items: { id: string; name: string }[], current: string, pick: (id: string) => void) => el('div', { class: 'wchips' }, items.map((it) => el('button', { class: 'chip' + (it.id === current ? ' on' : ''), 'data-nav': true, onClick: () => { Audio.sfx('click'); pick(it.id); } }, it.name)));
+      const slots: [Slot, string][] = [['belt', 'Cinturón'], ['shoes', 'Calzado'], ['charm', 'Amuleto']];
+      const lockedSkins = (f.skins ?? []).filter((s) => s.unlock && !this.g.save.achievements[s.unlock.achievement]).length;
+      const b = bonusOf(w, ITEMS);
+      this.ui.modal('Armario', [
+        el('h3', {}, 'Traje'),
+        chips([{ id: '', name: 'Original' }, ...skins.map((s) => ({ id: s.id, name: s.name }))], cur, setSkin),
+        lockedSkins ? el('p', { class: 'dim' }, `${lockedSkins} traje(s) más por desbloquear con logros.`) : null,
+        ...slots.flatMap(([slot, name]) => {
+          const owned = ITEMS.filter((i) => i.kind === slot && (w.inventory[i.id] ?? 0) > 0);
+          return [el('h3', {}, name), owned.length ? chips([{ id: '', name: 'Nada' }, ...owned.map((i) => ({ id: i.id, name: i.name }))], w.equip[slot] ?? '', (id) => { equipItem(w, slot, id || null, ITEMS); refresh(); }) : el('p', { class: 'dim' }, 'No tienes ninguno: mira en Merch Hoyo.')];
+        }),
+        el('p', { class: 'wbonus' }, `Daño ${pct(b.power)} · Velocidad ${pct(b.speed)} · Vida ${pct(b.health)} · Resistencia ${pct(b.stamina)} · Zafarse ${pct(b.escape)} · Daño recibido ${pct(b.resist)}`),
+      ], { side: true, onClose: () => setTimeout(() => { if (!this.ui.modalOpen) { this.busy = false; this.view?.wardrobeCam(false); this.ui.setCinema(false); } }, 0) });
+      this.busy = true;
+    };
+    const refresh = () => { this.view?.setPlayerLook(this.playerLook()); this.persist(); render(); };
+    render();
   }
 
   private travelPanel() {
@@ -790,8 +876,16 @@ export class WorldController {
         if (!spot) return;
         addMoney(w, -cost); addTime(w, 30);
         this.ui.closeModal();
-        this.view!.teleport(spot.x, spot.z + 2.5, 0);
-        this.ui.toast(`Taxi a ${d.name}.`, 'info');
+        if (this.view?.riding) this.view.dismount();
+        // trayecto: barrido, cartel del taxi y llegada
+        this.busy = true;
+        this.g.screens.wipe();
+        Audio.sfx('ready');
+        setTimeout(() => {
+          this.view!.teleport(spot.x + 2.8, spot.z + 2.8, 0);
+          this.ui.chapterCard('🚕 TAXI DE HOYO', d.name, d.blurb);
+          this.busy = false;
+        }, 320);
       }, !open || here);
     });
     this.open('Taxi de Hoyo', [el('p', {}, 'Veinte Hoyos el viaje, treinta minutos de mundo.'), el('div', { class: 'wlist' }, rows)], true);
@@ -865,7 +959,7 @@ export class WorldController {
     this.open('Mapa de Hoyo', [
       ch ? el('p', { class: 'wmap-goal' }, `★ Siguiente capítulo: ${ch.title} — ${CITY_BEATS[ch.id]?.goal ?? ''}`) : null,
       cv,
-      el('p', { class: 'dim' }, '★ dorado = capítulo de la historia · naranja = luchadores (puedes retarlos) · azul = alguien tiene una misión · gris = lugares. Los barrios con candado se abren avanzando en la historia.'),
+      el('p', { class: 'dim' }, '★ dorado = capítulo de la historia · naranja = luchadores (puedes retarlos) · azul = alguien tiene una misión · morado = tu moto · gris = lugares. Los barrios con candado se abren avanzando en la historia.'),
     ]);
   }
 
@@ -877,6 +971,25 @@ export class WorldController {
     ].map(([k, v]) => el('div', { class: 'hstat' }, [el('b', {}, v), el('span', {}, k)])))]);
   }
 
+  /** Mando en la ciudad: A usar/hablar, Y mapa, X bolsa, Select misiones, B cerrar ventanas */
+  private miniRunning = false;
+  pad(a: string) {
+    if (!this.active) return;
+    if (this.miniRunning) {
+      const code = ({ confirm: 'Space', x: 'KeyA', y: 'KeyS', back: 'KeyD' } as Record<string, string>)[a];
+      const res = this.ui.host.querySelector<HTMLElement>('.mini-result .btn');
+      if (a === 'confirm' && res) { res.click(); return; }
+      if (code) window.dispatchEvent(new KeyboardEvent('keydown', { code, key: code === 'Space' ? ' ' : code.slice(3).toLowerCase() }));
+      return;
+    }
+    if (this.ui.modalOpen) { if (a === 'start') { this.ui.closeModal(); return; } this.ui.pad(a); return; }
+    if (this.busy) return;
+    if (a === 'confirm') { if (this.view?.target) this.interact(this.view.target); }
+    else if (a === 'y') this.mapPanel();
+    else if (a === 'x') this.inventoryPanel();
+    else if (a === 'select') this.questsPanel();
+  }
+
   pauseMenu() {
     if (!this.active) return;
     if (this.ui.modalOpen) { this.ui.closeModal(); return; }
@@ -884,6 +997,7 @@ export class WorldController {
     const items: [string, string, () => void][] = [
       ['Misiones (Q)', 'Diario de misiones', () => { this.ui.closeModal(); this.questsPanel(); }],
       ['Inventario (I)', 'Equipo, consumables y traje', () => { this.ui.closeModal(); this.inventoryPanel(); }],
+      ['Armario', 'Cambia de traje y de equipo', () => { this.ui.closeModal(); this.wardrobePanel(); }],
       ['Mapa (M)', 'Distritos y marcadores', () => { this.ui.closeModal(); this.mapPanel(); }],
       ['Estadísticas', 'Tu progreso en Hoyo', () => { this.ui.closeModal(); this.statsPanel(); }],
       ['Capítulos y finales', 'Repite capítulos ya jugados o mira los finales', () => { this.ui.closeModal(); this.leave(true); this.g.goMenu(); this.g.screens.showStoryMenu(); }],
@@ -902,7 +1016,9 @@ export class WorldController {
     this.busy = true;
     this.ui.closeModal();
     const best = this.progress.records[id] ?? 0;
+    this.miniRunning = true;
     const r = await runMinigame(this.ui.host, id, best);
+    this.miniRunning = false;
     const w = this.progress;
     addTime(w, 20);
     let money = 0;

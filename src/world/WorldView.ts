@@ -2,13 +2,15 @@ import * as THREE from 'three';
 import { FighterModel } from '../fighters/FighterModel';
 import { ANIMS, GUARD, attackPose, blendPose, mk, type Pose } from '../fighters/Pose';
 import { CityLife } from './CityLife';
+import { Audio } from '../audio/Audio';
 import { fighterById } from '../content/roster';
 import type { Appearance } from '../combat/types';
 import type { Stage } from '../render/Stage';
 import { windowsTexture } from '../arenas/Azotea';
-import { DISTRICTS, GRAFFITI, POIS, SEA_Z, SPAWN, STICKERS, WORLD_SIZE } from '../../content/mundo';
+import { AVENUES, DISTRICTS, GRAFFITI, POIS, SEA_Z, SPAWN, STICKERS, WORLD_SIZE } from '../../content/mundo';
 import { NPCS } from '../../content/mundo-npc';
 import { buildLayout, type Layout } from './layout';
+import { box, buildCityStatic, makeMoto, makeTaxi, merge, paint, type CityStatic } from './CityMeshes';
 import type { DistrictDef, NpcDef, PoiDef } from './types';
 
 /** ===== Escena 3D del mundo abierto: ciudad, jugador, NPC, ciclo día/noche, colisiones y cámara ===== */
@@ -17,7 +19,8 @@ export type Target =
   | { kind: 'npc'; id: string; def: NpcDef; x: number; z: number; label: string }
   | { kind: 'poi'; def: PoiDef; x: number; z: number; label: string }
   | { kind: 'sticker'; id: string; x: number; z: number; label: string }
-  | { kind: 'graffiti'; id: string; x: number; z: number; label: string };
+  | { kind: 'graffiti'; id: string; x: number; z: number; label: string }
+  | { kind: 'moto'; x: number; z: number; label: string };
 
 /** Lo que la vista necesita saber del estado del juego */
 export interface WorldBridge {
@@ -44,6 +47,8 @@ interface Actor { id: string; model: FighterModel; tag: THREE.Sprite; x: number;
 const STUN: Partial<Pose> = { torso: [-0.3, 0.2, 0.1], head: [-0.35, 0, 0], lU: [-0.3, 0, 0.7], rU: [-0.25, 0, -0.6], lF: [-0.6, 0, 0], rF: [-0.6, 0, 0], hips: [-0.08, 0, 0] };
 const FLEX: Partial<Pose> = ANIMS.taunt.hit;
 const TALK: Partial<Pose> = { lU: [-0.7, 0, 0.35], lF: [-1.2, 0, 0], rU: [-0.2, 0, -0.2], rF: [-0.5, 0, 0], head: [-0.05, 0, 0] };
+/** Postura de ir en moto: sentado, brazos al manillar */
+const RIDE: Pose = mk({ hips: [0, 0, 0], torso: [0.45, 0, 0], head: [-0.35, 0, 0], lU: [-1.15, 0, 0.28], rU: [-1.15, 0, -0.28], lF: [-0.55, 0, 0], rF: [-0.55, 0, 0], lT: [-1.35, 0, 0.18], rT: [-1.35, 0, -0.18], lS: [1.55, 0, 0], rS: [1.55, 0, 0] });
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
 const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
 const smooth = (a: number, b: number, x: number) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -92,7 +97,7 @@ export class WorldView {
   private camPos = new THREE.Vector3();
   readonly rig = { forward: new THREE.Vector3(0, 0, -1), right: new THREE.Vector3(1, 0, 0) };
   district: string | null = null;
-  private npcs: { t: Extract<Target, { kind: 'npc' }>; model: FighterModel; pose: Pose; phase: number; yaw: number; marker: THREE.Mesh | null; markerKind: string | null; tag: THREE.Sprite }[] = [];
+  private npcs: { t: Extract<Target, { kind: 'npc' }>; model: FighterModel; pose: Pose; phase: number; yaw: number; marker: THREE.Mesh | null; markerKind: string | null; tag: THREE.Sprite; shadow?: boolean; lod: number }[] = [];
   private poiMeshes: { p: PoiDef; obj: THREE.Object3D; spot: { x: number; z: number } }[] = [];
   private stickerMeshes: { id: string; obj: THREE.Object3D; x: number; z: number }[] = [];
   private lockedRects: { d: DistrictDef; x0: number; x1: number; z0: number; z1: number }[] = [];
@@ -123,7 +128,7 @@ export class WorldView {
   constructor(private stage: Stage, private bridge: WorldBridge) {
     const npcReqs: { key: string; district: string; at: [number, number] }[] = [];
     for (const n of NPCS) { npcReqs.push({ key: 'npc:' + n.id, district: n.district, at: n.at }); if (n.alt) npcReqs.push({ key: 'npcalt:' + n.id, district: n.alt.district, at: n.alt.at }); }
-    this.layout = buildLayout({ districts: DISTRICTS, pois: POIS, stickers: STICKERS, graffiti: GRAFFITI, npcs: npcReqs, worldSize: WORLD_SIZE, seaZ: SEA_Z });
+    this.layout = buildLayout({ districts: DISTRICTS, pois: POIS, stickers: STICKERS, graffiti: GRAFFITI, npcs: npcReqs, worldSize: WORLD_SIZE, seaZ: SEA_Z, avenues: AVENUES });
     const scene = stage.scene;
     scene.add(this.group);
     scene.background = this.skyColor;
@@ -134,6 +139,7 @@ export class WorldView {
     this.buildPois();
     this.buildStickers();
     this.buildNpcs();
+    this.buildLod(this.npcs.length + 4);
     this.buildLocks();
     this.buildSky();
     this.buildPlaza();
@@ -141,12 +147,11 @@ export class WorldView {
     this.buildSparring();
     // gente y coches
     const cheap = stage.quality === 'baja';
-    const roadDistricts = DISTRICTS.filter((d) => d.id !== 'plaza');
     const ring = this.layout.boxes.find((b) => b.poi === 'ring_calle');
     this.life = new CityLife({
       layout: this.layout,
       allowed: (x, z) => !this.lockedAt(x, z),
-      roadOpen: (i) => bridge.isOpen(roadDistricts[i]?.id ?? 'plaza'),
+      roadOpen: (i) => { const d = this.layout.roads[i]?.district; return !d || bridge.isOpen(d); },
       people: cheap ? 34 : 56, cars: cheap ? 9 : 14,
       crowds: ring ? [{ x: ring.x, z: ring.z, r: 4.7, n: cheap ? 8 : 12 }] : [],
     });
@@ -171,49 +176,26 @@ export class WorldView {
   }
 
   private buildTerrain() {
-    this.mesh(new THREE.PlaneGeometry(420, 420), std(0x56664a, 1), 0, -0.02, 0).rotation.x = -Math.PI / 2;
-    for (const d of DISTRICTS) {
-      const m = this.mesh(new THREE.BoxGeometry(d.size[0], 0.3, d.size[1]), std(d.ground, 0.95), d.center[0], -0.08, d.center[1]);
-      m.receiveShadow = true;
-    }
+    // ciudad estática fusionada (suelo, aceras, marcas viales, edificios): muy pocas llamadas de dibujo
+    this.city = buildCityStatic(this.layout, DISTRICTS, SEA_Z, (poi) => poi === 'ring_calle' || poi.startsWith('taxi_'));
+    this.group.add(this.city.group);
+    this.windowMats.push(this.city.windowMat);
+    this.sea = this.city.group.userData.sea as THREE.Mesh;
     // plaza circular: adoquines (con textura) — el parque se monta en buildPlaza()
     const tiles = tileTexture();
     tiles.repeat.set(11, 11);
     const plaza = this.mesh(new THREE.CylinderGeometry(22, 22, 0.2, 48), new THREE.MeshStandardMaterial({ color: 0xffffff, map: tiles, roughness: 0.9 }), 0, 0.02, 0);
     void plaza;
-    const curb = this.mesh(new THREE.TorusGeometry(22, 0.22, 6, 72), std(0x8a8478, 0.8), 0, 0.12, 0); curb.rotation.x = Math.PI / 2;
-    // calles
-    for (const r of this.layout.roads) {
-      const len = Math.hypot(r.x2 - r.x1, r.z2 - r.z1);
-      const m = this.mesh(new THREE.PlaneGeometry(len, r.w), std(0x2a2a2f, 0.9), (r.x1 + r.x2) / 2, 0.08, (r.z1 + r.z2) / 2);
-      m.rotation.x = -Math.PI / 2; m.rotation.z = Math.atan2(r.z2 - r.z1, r.x2 - r.x1) * -1 + 0;
-      m.rotation.set(-Math.PI / 2, 0, Math.atan2(r.x2 - r.x1, -(r.z2 - r.z1)) - Math.PI / 2 + Math.PI / 2 * 0);
-      // orientar la calle a lo largo del segmento
-      m.rotation.set(0, 0, 0); m.rotation.x = -Math.PI / 2; m.rotation.order = 'YXZ'; m.rotation.y = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
-      // aceras a los lados
-      for (const side of [-1, 1]) {
-        const L2 = Math.max(0, len - 35), mx = (r.x1 + r.x2) / 2, mz = (r.z1 + r.z2) / 2, ux = (r.x2 - r.x1) / len, uz = (r.z2 - r.z1) / len;
-        const ox = -uz * side * (r.w / 2 + 1.1), oz = ux * side * (r.w / 2 + 1.1);
-        const sw = this.mesh(new THREE.BoxGeometry(L2, 0.18, 2.2), std(0xa8a196, 0.9), mx + ox + ux * 5.5, 0.09, mz + oz + uz * 5.5);
-        sw.rotation.y = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
-      }
-      // línea discontinua central
-      const dash = this.mesh(new THREE.PlaneGeometry(len, 0.25), new THREE.MeshBasicMaterial({ color: 0xe8d070 }), (r.x1 + r.x2) / 2, 0.09, (r.z1 + r.z2) / 2);
-      dash.rotation.order = 'YXZ'; dash.rotation.x = -Math.PI / 2; dash.rotation.y = -Math.atan2(r.z2 - r.z1, r.x2 - r.x1);
+    const curb = this.mesh(new THREE.TorusGeometry(22, 0.22, 6, 72), std(0x8a8478, 0.8), 0, 0.14, 0); curb.rotation.x = Math.PI / 2;
+    // fuente: se dibuja EXACTAMENTE donde está su círculo de colisión
+    const fc = this.layout.circles.find((c) => c.kind === 'fountain');
+    if (fc) {
+      const r = fc.r;
+      this.mesh(new THREE.CylinderGeometry(r - 0.2, r, 0.9, 28), std(0xcfc8b8, 0.7), fc.x, 0.45, fc.z, true);
+      this.fountainWater = this.mesh(new THREE.CylinderGeometry(r - 0.6, r - 0.6, 0.1, 28), std(0x4ab0e8, 0.1, 0.3, { transparent: true, opacity: 0.85 }), fc.x, 0.88, fc.z);
+      this.mesh(new THREE.CylinderGeometry(0.3, 0.5, 1.8, 10), std(0xb8b098, 0.7), fc.x, 1.3, fc.z, true);
+      const logo = this.mesh(new THREE.TorusGeometry(r * 0.6, 0.12, 6, 32), std(0xc1272d, 0.5), fc.x, 0.95, fc.z); logo.rotation.x = Math.PI / 2;
     }
-    // mar
-    this.sea = this.mesh(new THREE.PlaneGeometry(500, 160), std(0x1f6f9a, 0.15, 0.1, { transparent: true, opacity: 0.92 }), 0, -0.15, SEA_Z + 78);
-    this.sea.rotation.x = -Math.PI / 2;
-    // arena de la playa más clara junto al agua
-    const shore = this.mesh(new THREE.PlaneGeometry(100, 8), std(0xe8dcb0, 1), 0, 0.12, SEA_Z - 2); shore.rotation.x = -Math.PI / 2;
-    // fuente
-    const fp = this.layout.spots['poi:fuente'] ?? { x: 0, z: 0 };
-    const basin = this.mesh(new THREE.CylinderGeometry(3.4, 3.6, 0.9, 24), std(0xcfc8b8, 0.7), fp.x, 0.45, fp.z, true);
-    void basin;
-    this.fountainWater = this.mesh(new THREE.CylinderGeometry(3, 3, 0.1, 24), std(0x4ab0e8, 0.1, 0.3, { transparent: true, opacity: 0.85 }), fp.x, 0.88, fp.z);
-    const spout = this.mesh(new THREE.CylinderGeometry(0.3, 0.5, 1.8, 10), std(0xb8b098, 0.7), fp.x, 1.3, fp.z, true);
-    void spout;
-    const logo = this.mesh(new THREE.TorusGeometry(2.2, 0.12, 6, 32), std(0xc1272d, 0.5), fp.x, 0.95, fp.z); logo.rotation.x = Math.PI / 2;
     // hoguera de la playa
     const hp = this.layout.spots['poi:hoguera'];
     if (hp) {
@@ -221,33 +203,25 @@ export class WorldView {
       this.fire = this.mesh(new THREE.ConeGeometry(0.6, 1.5, 8), new THREE.MeshBasicMaterial({ color: 0xff8a2a, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false }), hp.x, 1.0, hp.z);
     }
   }
+  private city!: CityStatic;
 
   private buildBuildings() {
-    const tex = [windowsTexture(31), windowsTexture(32), windowsTexture(33)];
-    const plain: Record<number, THREE.MeshStandardMaterial> = {};
-    let ti = 0;
+    // rótulos de los edificios con nombre (pocos) y taxis en las paradas
     for (const b of this.layout.boxes) {
-      if (b.poi === 'ring_calle') continue; // el ring callejero se dibuja aparte
-      const style = DISTRICTS.find((d) => d.id === b.district)?.style;
-      let mat: THREE.MeshStandardMaterial;
-      if (b.poi || style === 'savanna' || style === 'beach') {
-        mat = plain[b.color] ?? (plain[b.color] = std(b.color, 0.85));
-      } else {
-        const t = tex[ti++ % 3].clone(); t.repeat.set(Math.max(1, b.w / 8), Math.max(1, b.h / 16)); t.needsUpdate = true;
-        mat = new THREE.MeshStandardMaterial({ color: b.color, roughness: 0.9, emissiveMap: t, emissive: 0xffd890, emissiveIntensity: 0 });
-        mat.map = t;
-        this.windowMats.push(mat);
+      if (b.poi?.startsWith('taxi_')) {
+        const taxi = makeTaxi();
+        taxi.position.set(b.x, 0.06, b.z);
+        taxi.rotation.y = b.d > b.w ? 0 : Math.PI / 2;
+        this.group.add(taxi);
+        this.taxis.push(taxi);
+        continue;
       }
-      const m = this.mesh(new THREE.BoxGeometry(b.w, b.h, b.d), mat, b.x, b.h / 2, b.z, true);
-      void m;
-      // tejado
-      if (!b.poi) this.mesh(new THREE.BoxGeometry(b.w + 0.4, 0.4, b.d + 0.4), std(0x2a2a2e, 0.9), b.x, b.h + 0.2, b.z, false);
-      if (b.sign) {
-        const s = this.mesh(new THREE.PlaneGeometry(Math.min(b.w - 2, 14), 2.2), new THREE.MeshBasicMaterial({ map: textTexture(b.sign, '#101014', '#f2c14e', 512, 96, 60), toneMapped: false }), b.x, Math.min(b.h - 1.4, 6), b.z + b.d / 2 + 0.06);
-        void s;
-      }
+      if (!b.sign) continue;
+      const s = this.mesh(new THREE.PlaneGeometry(Math.min(b.w - 2, 14), 2.2), new THREE.MeshBasicMaterial({ map: textTexture(b.sign, '#101014', '#f2c14e', 512, 96, 60), toneMapped: false }), b.x, Math.min(b.h - 1.4, 6), b.z + b.d / 2 + 0.06);
+      s.matrixAutoUpdate = false; s.updateMatrix();
     }
   }
+  private taxis: THREE.Group[] = [];
 
   private buildProps() {
     const by = (k: string) => this.layout.circles.filter((c) => c.kind === k);
@@ -303,7 +277,7 @@ export class WorldView {
     const m4 = new THREE.Matrix4(), q = new THREE.Quaternion();
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + R() * 0.03;
-      const r = 175 + R() * 40;
+      const r = 240 + R() * 50;
       const x = Math.cos(a) * r, z = Math.sin(a) * r;
       if (z > SEA_Z + 20 && Math.abs(x) < 160) continue; // por el mar, horizonte libre
       const w = 8 + R() * 14, h = 18 + R() * 60;
@@ -319,81 +293,59 @@ export class WorldView {
 
   /** La plaza como un parque de verdad: césped, caminos, bancos, parterres, quiosco, puestos y guirnaldas de luces */
   private buildPlaza() {
+    // todo el mobiliario de la plaza se funde en dos mallas (sólido y bombillas)
+    const parts: THREE.BufferGeometry[] = [], bulbs: THREE.BufferGeometry[] = [];
+    const put = (g: THREE.BufferGeometry, color: number, x: number, y: number, z: number, ry = 0, rx = 0) => { if (rx) g.rotateX(rx); if (ry) g.rotateY(ry); g.translate(x, y, z); parts.push(paint(g, color)); };
+    const fc = this.layout.circles.find((c) => c.kind === 'fountain') ?? { x: 0, z: 0 };
     // césped en cuatro cuartos, entre caminos en cruz
-    const grass = std(0x4f8a3a, 0.95);
-    for (let k = 0; k < 4; k++) {
-      const g = this.mesh(new THREE.RingGeometry(6.2, 13.5, 24, 1, k * Math.PI / 2 + 0.2, Math.PI / 2 - 0.4), grass, 0, 0.135, 0);
-      g.rotation.x = -Math.PI / 2;
-    }
-    // bordillo de los parterres
-    const hedge = std(0x2f6a2a, 0.9);
+    for (let k = 0; k < 4; k++) put(new THREE.RingGeometry(6.2, 13.5, 24, 1, k * Math.PI / 2 + 0.2, Math.PI / 2 - 0.4), 0x4f8a3a, 0, 0.135, 0, 0, -Math.PI / 2);
+    // setos en el borde de los parterres
     for (let k = 0; k < 4; k++) {
       const a0 = k * Math.PI / 2 + 0.2, a1 = a0 + Math.PI / 2 - 0.4;
-      for (let i = 0; i <= 6; i++) {
-        const a = a0 + (a1 - a0) * (i / 6);
-        this.mesh(new THREE.SphereGeometry(0.45, 7, 5), hedge, Math.cos(a) * 13.6, 0.35, -Math.sin(a) * 13.6, true);
-      }
+      for (let i = 0; i <= 6; i++) { const a = a0 + (a1 - a0) * (i / 6); put(new THREE.SphereGeometry(0.45, 7, 5), 0x2f6a2a, Math.cos(a) * 13.6, 0.35, -Math.sin(a) * 13.6); }
     }
     // flores
     const flowers = [0xff5a8a, 0xffd23a, 0xff8a3a, 0xc85aff, 0xffffff];
-    const fl = new THREE.InstancedMesh(new THREE.SphereGeometry(0.085, 5, 3), new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.7 }), 160);
-    const m4 = new THREE.Matrix4(), col = new THREE.Color();
     let s = 77; const R = () => { s = (Math.imul(s, 1664525) + 1013904223) >>> 0; return s / 4294967296; };
     for (let i = 0; i < 160; i++) {
       const k = i % 4, a = k * Math.PI / 2 + 0.3 + R() * (Math.PI / 2 - 0.6), r = 7 + R() * 5.8;
-      m4.makeTranslation(Math.cos(a) * r, 0.2, -Math.sin(a) * r); fl.setMatrixAt(i, m4); fl.setColorAt(i, col.setHex(flowers[i % flowers.length]));
+      put(new THREE.OctahedronGeometry(0.09, 0), flowers[i % flowers.length], Math.cos(a) * r, 0.2, -Math.sin(a) * r);
     }
-    fl.frustumCulled = false; this.group.add(fl); this.disposables.push(fl.geometry, fl.material as THREE.Material);
     // bancos en los caminos
-    const wood = std(0x8a5a2e, 0.8), iron = std(0x2a2a30, 0.5, 0.5);
     for (let k = 0; k < 4; k++) for (const side of [-1, 1]) {
       const a = k * Math.PI / 2, r = 9.5;
       const cx = Math.cos(a) * r + Math.cos(a + Math.PI / 2) * side * 2.6, cz = -Math.sin(a) * r - Math.sin(a + Math.PI / 2) * side * 2.6;
-      const b = new THREE.Group();
-      const seat = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.12, 0.6), wood); seat.position.y = 0.5; b.add(seat);
-      const back = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.5, 0.1), wood); back.position.set(0, 0.85, -0.28); b.add(back);
-      for (const x of [-0.95, 0.95]) { const leg = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.5, 0.55), iron); leg.position.set(x, 0.25, 0); b.add(leg); }
-      b.position.set(cx, 0.12, cz); b.traverse((o) => { (o as THREE.Mesh).castShadow = true; });
-      b.rotation.y = a + (side > 0 ? 0 : Math.PI);
-      this.group.add(b);
+      const ry = a + (side > 0 ? 0 : Math.PI);
+      const bench = merge([box(2.2, 0.12, 0.6, 0, 0.5, 0, 0x8a5a2e), box(2.2, 0.5, 0.1, 0, 0.85, -0.28, 0x8a5a2e), box(0.1, 0.5, 0.55, -0.95, 0.25, 0, 0x2a2a30), box(0.1, 0.5, 0.55, 0.95, 0.25, 0, 0x2a2a30)])!;
+      bench.rotateY(ry); bench.translate(cx, 0.06, cz); parts.push(bench);
     }
     // quiosco de prensa y helados
-    const kio = { x: 15, z: 15 };
-    if (!this.layout.blocked(kio.x, kio.z, 1.5)) {
-      this.mesh(new THREE.CylinderGeometry(1.4, 1.4, 2.2, 8), std(0x2a6a4a, 0.6), kio.x, 1.1, kio.z, true);
-      this.mesh(new THREE.ConeGeometry(2.1, 1.1, 8), std(0xc1272d, 0.6), kio.x, 2.75, kio.z, true);
-    }
+    if (!this.layout.blocked(15, 15, 1.5)) { put(new THREE.CylinderGeometry(1.4, 1.4, 2.2, 8), 0x2a6a4a, 15, 1.1, 15); put(new THREE.ConeGeometry(2.1, 1.1, 8), 0xc1272d, 15, 2.75, 15); }
     // puestos del mercadillo con toldos de colores
     const awn = [0xc1272d, 0xe8b42a, 0x2a8aff, 0x2d9a5a];
-    const stalls: [number, number][] = [[8, 18.5], [-2, 19.5], [19, -3], [-19, -6]];
-    stalls.forEach(([x, z], i) => {
+    ([[8, 18.5], [-2, 19.5], [19, -3], [-19, -6]] as [number, number][]).forEach(([x, z], i) => {
       if (this.layout.blocked(x, z, 1.2)) return;
-      this.mesh(new THREE.BoxGeometry(2.4, 0.9, 1.2), std(0x8a6a4a, 0.8), x, 0.55, z, true);
-      for (const sx of [-1.1, 1.1]) this.mesh(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 5), iron, x + sx, 1.2, z - 0.5, false);
-      const top = this.mesh(new THREE.BoxGeometry(2.8, 0.08, 1.8), std(awn[i % awn.length], 0.7), x, 2.3, z - 0.1, true);
-      top.rotation.x = 0.18;
-      // fruta / cosas encima
-      for (let j = 0; j < 5; j++) this.mesh(new THREE.SphereGeometry(0.14, 6, 4), std([0xff5a3a, 0xffd23a, 0x5ac83a][j % 3], 0.6), x - 0.8 + j * 0.4, 1.08, z + 0.1, false);
+      put(new THREE.BoxGeometry(2.4, 0.9, 1.2), 0x8a6a4a, x, 0.55, z);
+      for (const sx of [-1.1, 1.1]) put(new THREE.CylinderGeometry(0.05, 0.05, 2.2, 5), 0x2a2a30, x + sx, 1.2, z - 0.5);
+      put(new THREE.BoxGeometry(2.8, 0.08, 1.8), awn[i % awn.length], x, 2.3, z - 0.1, 0, 0.18);
+      for (let j = 0; j < 5; j++) put(new THREE.SphereGeometry(0.14, 6, 4), [0xff5a3a, 0xffd23a, 0x5ac83a][j % 3], x - 0.8 + j * 0.4, 1.08, z + 0.1);
     });
-    // guirnaldas de bombillas de la fuente a las farolas (de noche se encienden)
-    const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe6a0 });
-    this.disposables.push(bulbMat);
-    const bulbGeo = new THREE.SphereGeometry(0.09, 6, 4);
-    this.disposables.push(bulbGeo);
+    // guirnaldas de bombillas desde el mástil de la fuente hasta los postes
     for (let k = 0; k < 8; k++) {
       const a = (k / 8) * Math.PI * 2 + Math.PI / 8;
-      const ex = Math.cos(a) * 19, ez = Math.sin(a) * 19;
-      const pole = this.mesh(new THREE.CylinderGeometry(0.07, 0.09, 5, 6), iron, ex, 2.5, ez, true);
-      void pole;
+      const ex = fc.x + Math.cos(a) * 19, ez = fc.z + Math.sin(a) * 19;
+      put(new THREE.CylinderGeometry(0.07, 0.09, 5, 6), 0x2a2a30, ex, 2.5, ez);
       for (let i = 1; i < 14; i++) {
-        const t = i / 14, x = lerp(0, ex, t), z = lerp(0, ez, t), y = lerp(4.6, 4.9, t) - Math.sin(t * Math.PI) * 1.2;
-        const b = new THREE.Mesh(bulbGeo, bulbMat); b.position.set(x, y, z); this.group.add(b); this.festoon.push(b);
+        const t = i / 14, y = lerp(4.6, 4.9, t) - Math.sin(t * Math.PI) * 1.2;
+        const g = new THREE.OctahedronGeometry(0.1, 0); g.translate(lerp(fc.x, ex, t), y, lerp(fc.z, ez, t)); bulbs.push(paint(g, 0xffffff));
       }
     }
-    // mástil central sobre la fuente para las guirnaldas
-    const fp = this.layout.spots['poi:fuente'] ?? { x: 0, z: 0 };
-    this.mesh(new THREE.CylinderGeometry(0.1, 0.12, 4.8, 6), iron, fp.x, 2.6, fp.z, true);
-    this.mesh(new THREE.SphereGeometry(0.3, 10, 8), std(0xc1272d, 0.4), fp.x, 5.0, fp.z, true);
+    put(new THREE.CylinderGeometry(0.1, 0.12, 4.8, 6), 0x2a2a30, fc.x, 2.6, fc.z);
+    put(new THREE.SphereGeometry(0.3, 10, 8), 0xc1272d, fc.x, 5.0, fc.z);
+    const solid = this.mesh(merge(parts)!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), 0, 0, 0, true, true);
+    void solid;
+    const bulbMesh = this.mesh(merge(bulbs)!, new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xffe6a0 }), 0, 0, 0, false, false);
+    this.festoon.push(bulbMesh);
   }
 
   /** Carteles con las caras de los luchadores en la fachada del estadio y en la plaza */
@@ -423,15 +375,12 @@ export class WorldView {
   private buildSparring() {
     const b = this.layout.boxes.find((x) => x.poi === 'ring_calle');
     if (!b) return;
-    const mat = std(0xefe6d5, 0.8), apron = std(0xc1272d, 0.7), post = std(0x1a1a1e, 0.4, 0.6), rope = std(0xc1272d, 0.5);
-    this.mesh(new THREE.BoxGeometry(b.w, 0.9, b.d), apron, b.x, 0.45, b.z, true);
-    this.mesh(new THREE.BoxGeometry(b.w - 0.1, 0.06, b.d - 0.1), mat, b.x, 0.93, b.z);
-    const logo = this.mesh(new THREE.RingGeometry(0.9, 1.3, 24), new THREE.MeshBasicMaterial({ color: 0xc1272d }), b.x, 0.97, b.z); logo.rotation.x = -Math.PI / 2;
     const hw = b.w / 2 - 0.2, hd = b.d / 2 - 0.2;
-    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) this.mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.6, 8), post, b.x + sx * hw, 1.7, b.z + sz * hd, true);
-    for (const h of [1.35, 1.75, 2.15]) {
-      for (const [x, z, w, d] of [[0, -hd, b.w - 0.4, 0.05], [0, hd, b.w - 0.4, 0.05], [-hw, 0, 0.05, b.d - 0.4], [hw, 0, 0.05, b.d - 0.4]]) this.mesh(new THREE.BoxGeometry(w, 0.05, d), rope, b.x + x, h, b.z + z, false);
-    }
+    const parts: THREE.BufferGeometry[] = [box(b.w, 0.9, b.d, b.x, 0.45, b.z, 0xc1272d), box(b.w - 0.1, 0.06, b.d - 0.1, b.x, 0.93, b.z, 0xefe6d5)];
+    { const g = new THREE.RingGeometry(0.9, 1.3, 24); g.rotateX(-Math.PI / 2); g.translate(b.x, 0.97, b.z); parts.push(paint(g, 0xc1272d)); }
+    for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const g = new THREE.CylinderGeometry(0.1, 0.1, 1.6, 8); g.translate(b.x + sx * hw, 1.7, b.z + sz * hd); parts.push(paint(g, 0x1a1a1e)); }
+    for (const h of [1.35, 1.75, 2.15]) for (const [x, z, w, d] of [[0, -hd, b.w - 0.4, 0.05], [0, hd, b.w - 0.4, 0.05], [-hw, 0, 0.05, b.d - 0.4], [hw, 0, 0.05, b.d - 0.4]]) parts.push(box(w, 0.05, d, b.x + x, h, b.z + z, 0xc1272d));
+    this.mesh(merge(parts)!, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), 0, 0, 0, true, true);
     const sign = this.mesh(new THREE.PlaneGeometry(3.6, 0.7), new THREE.MeshBasicMaterial({ map: textTexture('EXHIBICIÓN', '#101014', '#f2c14e', 512, 100, 60), toneMapped: false, side: THREE.DoubleSide }), b.x, 3.0, b.z - hd);
     void sign;
     let la: Appearance, lb: Appearance;
@@ -446,7 +395,9 @@ export class WorldView {
   private updateSparring() {
     const sp = this.sparring;
     if (!sp) return;
-    if (Math.hypot(sp.cx - this.px, sp.cz - this.pz) > 70) return;
+    const far = Math.hypot(sp.cx - this.px, sp.cz - this.pz) > 32;
+    sp.a.root.visible = sp.b.root.visible = !far;
+    if (far) return;
     const t = this.time;
     const cyc = 1.4, k = Math.floor(t / cyc), u = t % cyc;
     const moves = ['jab', 'cross', 'hook', 'lowkick', 'jab', 'knee', 'highkick', 'taunt'];
@@ -526,8 +477,31 @@ export class WorldView {
       const tagMat = new THREE.SpriteMaterial({ map: textTexture(this.bridge.npcName(n.id), 'transparent', n.fighter ? '#ffd45e' : '#e8e8e8', 512, 96, 46), depthTest: false, transparent: true });
       const tag = new THREE.Sprite(tagMat); tag.scale.set(3.4, 0.64, 1); this.group.add(tag);
       const spot = this.layout.spots['npc:' + n.id];
-      this.npcs.push({ t: { kind: 'npc', id: n.id, def: n, x: spot.x, z: spot.z, label: this.bridge.npcName(n.id) }, model, pose: { ...GUARD }, phase: Math.random() * 10, yaw: n.yaw ?? Math.PI, marker: null, markerKind: null, tag });
+      this.npcs.push({ t: { kind: 'npc', id: n.id, def: n, x: spot.x, z: spot.z, label: this.bridge.npcName(n.id) }, model, pose: { ...GUARD }, phase: Math.random() * 10, yaw: n.yaw ?? Math.PI, marker: null, markerKind: null, tag, lod: this.npcs.length });
     }
+  }
+
+  /** Figuras lejanas: cuerpo (color de la ropa) y cabeza (color de la piel) instanciados */
+  private lodBody!: THREE.InstancedMesh;
+  private lodHead!: THREE.InstancedMesh;
+  private buildLod(n: number) {
+    const body = merge([paint(new THREE.CapsuleGeometry(0.26, 0.7, 3, 8).translate(0, 1.2, 0), 0xffffff), box(0.2, 0.85, 0.22, -0.12, 0.43, 0, 0x444444), box(0.2, 0.85, 0.22, 0.12, 0.43, 0, 0x444444), box(0.13, 0.62, 0.14, -0.38, 1.25, 0, 0xffffff), box(0.13, 0.62, 0.14, 0.38, 1.25, 0, 0xffffff)])!;
+    this.lodBody = new THREE.InstancedMesh(body, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8 }), n);
+    this.lodHead = new THREE.InstancedMesh(new THREE.SphereGeometry(0.17, 10, 8).translate(0, 1.82, 0), new THREE.MeshStandardMaterial({ roughness: 0.6 }), n);
+    for (const m of [this.lodBody, this.lodHead]) { m.frustumCulled = false; m.castShadow = false; this.group.add(m); this.disposables.push(m.geometry, m.material as THREE.Material); }
+    const z = new THREE.Matrix4().makeScale(0, 0, 0), c = new THREE.Color(0xffffff);
+    for (let i = 0; i < n; i++) { this.lodBody.setMatrixAt(i, z); this.lodHead.setMatrixAt(i, z); this.lodBody.setColorAt(i, c); this.lodHead.setColorAt(i, c); }
+  }
+  private lodM = new THREE.Matrix4(); private lodQ = new THREE.Quaternion(); private lodC = new THREE.Color();
+  private lod(i: number, x: number, z: number, yaw: number, ap: Appearance | null) {
+    if (!this.lodBody) return;
+    if (!ap) this.lodM.makeScale(0, 0, 0);
+    else { const h = ap.height ?? 1; this.lodM.compose(new THREE.Vector3(x, 0, z), this.lodQ.setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw), new THREE.Vector3(h * (ap.build ?? 1), h, h)); }
+    this.lodBody.setMatrixAt(i, this.lodM); this.lodHead.setMatrixAt(i, this.lodM);
+    if (ap) { this.lodBody.setColorAt(i, this.lodC.setHex(ap.outfit === 'desnudo' ? ap.skin : ap.outfitColor)); this.lodHead.setColorAt(i, this.lodC.setHex(ap.skin)); }
+    this.lodBody.instanceMatrix.needsUpdate = true; this.lodHead.instanceMatrix.needsUpdate = true;
+    if (this.lodBody.instanceColor) this.lodBody.instanceColor.needsUpdate = true;
+    if (this.lodHead.instanceColor) this.lodHead.instanceColor.needsUpdate = true;
   }
 
   private buildLocks() {
@@ -610,6 +584,7 @@ export class WorldView {
     // cámara: vectores de referencia para el InputManager
     this.rig.forward.set(-Math.sin(this.camYaw), 0, -Math.cos(this.camYaw));
     this.rig.right.set(Math.cos(this.camYaw), 0, -Math.sin(this.camYaw));
+    if (this.riding) { this.updateRide(dt, active ? mx : 0, active ? mz : 0, run); this.afterMove(dt, active); return; }
     const speed = run ? 7.4 : 4.4;
     const len = Math.hypot(mx, mz);
     this.moving = active && len > 0.1;
@@ -626,12 +601,18 @@ export class WorldView {
       if (this.moving) { const ty = Math.atan2(this.vx, this.vz); let d = ty - this.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2; this.yaw += d * (1 - Math.exp(-14 * dt)); }
     }
     // modelo del jugador
+    if (this.turntable) this.yaw += dt * 0.55;
     this.playerModel.root.position.set(this.px, 0, this.pz);
     this.playerModel.root.rotation.y = this.yaw;
+    this.playerModel.root.rotation.z = 0;
     const sp = Math.hypot(this.vx, this.vz);
     this.walkT += dt * (2.0 + sp * 0.9);
     this.pPose = blendPose(this.pPose, this.walkPose(this.walkT, sp, this.running), 1 - Math.exp(-14 * dt), this.pPose);
     this.playerModel.applyPose(this.pPose, this.time);
+    this.afterMove(dt, active);
+  }
+
+  private afterMove(dt: number, active: boolean) {
     // distritos
     const d = this.layout.districtAt(this.px, this.pz);
     if (d !== this.district) { this.district = d; this.onDistrict?.(d); }
@@ -646,6 +627,69 @@ export class WorldView {
   }
 
   onDistrict?: (id: string | null) => void;
+
+  // ------------------------------------------------------------------ moto
+  private moto: THREE.Group | null = null;
+  riding = false;
+  private motoV = 0;
+  private lean = 0;
+  /** Aparca la moto en un sitio (o la deja junto a Chema si no se dice dónde) */
+  placeMoto(x: number, z: number, yaw: number) {
+    if (!this.moto) { this.moto = makeMoto(); this.group.add(this.moto); }
+    this.moto.position.set(x, 0.06, z); this.moto.rotation.set(0, yaw, 0);
+  }
+  get motoPos() { return this.moto ? { x: this.moto.position.x, z: this.moto.position.z, yaw: this.moto.rotation.y } : null; }
+  mount() {
+    if (!this.moto) return;
+    this.riding = true; this.motoV = 0;
+    this.px = this.moto.position.x; this.pz = this.moto.position.z; this.yaw = this.moto.rotation.y;
+    this.vx = this.vz = 0;
+  }
+  /** Bajarse: la moto se queda aparcada y Chema a su lado */
+  dismount() {
+    if (!this.riding || !this.moto) return;
+    this.riding = false; this.motoV = 0;
+    const rx = Math.cos(this.yaw), rz = -Math.sin(this.yaw);
+    for (const s of [1.3, -1.3, 2.2, -2.2]) { const x = this.px + rx * s, z = this.pz + rz * s; if (this.free(x, z)) { this.px = x; this.pz = z; break; } }
+    this.moto.rotation.z = 0;
+  }
+  private updateRide(dt: number, mx: number, mz: number, run: boolean) {
+    const moto = this.moto!;
+    const len = Math.hypot(mx, mz);
+    const top = run ? 21 : 14;
+    // acelera hacia donde apunta el stick; si no hay dirección, frena
+    let steer = 0;
+    if (len > 0.15) {
+      const want = Math.atan2(mx, mz);
+      let df = want - this.yaw; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2;
+      // girar en el sitio no: hace falta velocidad (y si va muy al revés, frena primero)
+      const reverse = Math.abs(df) > 2.4 && this.motoV > 3;
+      steer = clamp(df, -1, 1) * (reverse ? 0 : 1);
+      this.yaw += steer * dt * (1.4 + 1.6 * Math.min(1, this.motoV / 8));
+      this.motoV += ((reverse ? 0 : top * Math.min(1, len)) - this.motoV) * (1 - Math.exp(-(reverse ? 3 : 1.3) * dt));
+    } else this.motoV *= Math.exp(-2.2 * dt);
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    const nx = this.px + fx * this.motoV * dt, nz = this.pz + fz * this.motoV * dt;
+    const blockedAhead = !this.free(nx + fx * 0.9, nz + fz * 0.9) || this.lockedAt(nx, nz);
+    if (!blockedAhead) { this.px = nx; this.pz = nz; }
+    else { if (this.motoV > 9) Audio.sfx('heavy'); this.motoV = -this.motoV * 0.15; }
+    this.lean += (-steer * Math.min(1, this.motoV / 10) * 0.45 - this.lean) * (1 - Math.exp(-6 * dt));
+    moto.position.set(this.px, 0.06, this.pz);
+    moto.rotation.set(0, this.yaw, this.lean, 'YXZ');
+    // Chema sentado en la moto
+    this.playerModel.root.position.set(this.px - Math.cos(this.yaw) * 0, 0.35, this.pz);
+    this.playerModel.root.rotation.set(0, this.yaw, this.lean, 'YXZ');
+    this.pPose = blendPose(this.pPose, RIDE, 1 - Math.exp(-10 * dt), this.pPose);
+    this.playerModel.applyPose(this.pPose, this.time);
+    this.playerModel.body.position.y = 0.62;
+    this.moving = this.motoV > 0.5; this.running = this.motoV > 12;
+    // la cámara se coloca sola detrás de la moto cuando va rápido
+    if (this.motoV > 4 && !this.cine) {
+      let dc = this.yaw + Math.PI - this.camYaw; while (dc > Math.PI) dc -= Math.PI * 2; while (dc < -Math.PI) dc += Math.PI * 2;
+      this.camYaw += dc * (1 - Math.exp(-1.8 * dt));
+    }
+  }
+  get speedKmh() { return Math.round(Math.abs(this.motoV) * 3.6); }
 
   private walkPose(t: number, speed: number, run: boolean): Pose {
     const a = Math.min(1, speed / 4.4);
@@ -669,12 +713,24 @@ export class WorldView {
       // si el mismo personaje está esperando en una marca de la historia o en una escena, aquí no está
       const here = !!spot && !this.storyCast.some((a) => a.id === n.t.id) && !this.sceneCast.some((a) => a.id === n.t.id);
       n.model.root.visible = here; n.tag.visible = here;
-      if (!here) { n.t.x = -9999; continue; }
+      if (!here) { n.t.x = -9999; this.lod(n.lod, 0, 0, 0, null); continue; }
       const key = spot!.district === n.t.def.district && spot!.at[0] === n.t.def.at[0] && spot!.at[1] === n.t.def.at[1] ? 'npc:' + n.t.def.id : 'npcalt:' + n.t.def.id;
       const p = this.layout.spots[key] ?? this.layout.spots['npc:' + n.t.def.id];
       n.t.x = p.x; n.t.z = p.z;
       // mirar al jugador si está cerca
       const dx = this.px - p.x, dz = this.pz - p.z, d = Math.hypot(dx, dz);
+      // rendimiento: los que están lejos no se dibujan ni se animan; solo los cercanos proyectan sombra
+      if (d > 22) {
+        // de lejos: figura simple instanciada (mucho más barata que el modelo completo)
+        n.model.root.visible = false; n.tag.visible = false;
+        if (d < 90) this.lod(n.lod, p.x, p.z, n.yaw, n.model.ap); else this.lod(n.lod, 0, 0, 0, null);
+        if (n.marker) { n.marker.visible = d < 60; n.marker.position.set(p.x, 3.2 + Math.sin(this.time * 3) * 0.12, p.z); }
+        continue;
+      }
+      this.lod(n.lod, 0, 0, 0, null);
+      if (n.marker) n.marker.visible = true;
+      const shadow = d < 16;
+      if (n.shadow !== shadow) { n.shadow = shadow; n.model.setCastShadow(shadow); }
       if (d < 6) { const ty = Math.atan2(dx, dz); let df = ty - n.yaw; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; n.yaw += df * (1 - Math.exp(-4 * dt)); }
       n.model.root.position.set(p.x, 0, p.z); n.model.root.rotation.y = n.yaw;
       // los luchadores entrenan solos (sombra, posturitas) hasta que te acercas
@@ -690,7 +746,7 @@ export class WorldView {
       n.pose = blendPose(n.pose, target, 1 - Math.exp(-10 * dt), n.pose);
       n.model.applyPose(n.pose, this.time);
       n.tag.position.set(p.x, 2.55 * (n.model.ap.height ?? 1), p.z);
-      n.tag.visible = here && !this.cine;
+      n.tag.visible = here && !this.cine && d < 26;
       // marcador de misión
       const mk2 = this.bridge.npcMarker(n.t.id);
       if (mk2 !== n.markerKind) {
@@ -708,16 +764,17 @@ export class WorldView {
   private updateVisuals(dt: number) {
     const t = this.time;
     for (const pm of this.poiMeshes) {
-      const vis = this.bridge.poiVisible(pm.p);
+      const near = pm.p.kind === 'story' || Math.abs(pm.spot.x - this.px) + Math.abs(pm.spot.z - this.pz) < 70;
+      const vis = near && this.bridge.poiVisible(pm.p);
       pm.obj.visible = vis && !(this.cine && pm.p.kind === 'story');
-      pm.obj.traverse((o) => { if (o.userData.spin) { o.rotation.y = t * 2; o.position.y = 3.6 + Math.sin(t * 2.5) * 0.2; } });
+      if (vis) pm.obj.traverse((o) => { if (o.userData.spin) { o.rotation.y = t * 2; o.position.y = 3.6 + Math.sin(t * 2.5) * 0.2; } });
     }
     for (const s of this.stickerMeshes) {
-      const vis = this.bridge.stickerVisible(s.id);
+      const vis = Math.abs(s.x - this.px) + Math.abs(s.z - this.pz) < 60 && this.bridge.stickerVisible(s.id);
       s.obj.visible = vis;
       if (vis) { s.obj.rotation.y = t * 2.2; s.obj.position.y = 1.0 + Math.sin(t * 3 + s.x) * 0.12; }
     }
-    for (const g of this.graffitiSprites) { g.tag.visible = !this.bridge.graffitiDone(g.id); }
+    for (const g of this.graffitiSprites) { const near = Math.abs(g.panel.position.x - this.px) + Math.abs(g.panel.position.z - this.pz) < 70; g.panel.visible = near; g.tag.visible = near && !this.bridge.graffitiDone(g.id); }
     if (this.sea) { (this.sea.material as THREE.MeshStandardMaterial).color.setHex(0x1f6f9a).multiplyScalar(0.55 + 0.45 * this.daylight + Math.sin(t * 0.7) * 0.03); this.sea.position.y = -0.15 + Math.sin(t * 0.8) * 0.05; }
     if (this.fire) { this.fire.scale.set(1, 0.9 + 0.25 * Math.sin(t * 13) + 0.1 * Math.sin(t * 29), 1); (this.fire.material as THREE.MeshBasicMaterial).opacity = 0.35 + 0.65 * this.night; }
     if (this.fountainWater) this.fountainWater.position.y = 0.88 + Math.sin(t * 2) * 0.02;
@@ -757,6 +814,7 @@ export class WorldView {
     if (key === this.storyKey) return;
     this.storyKey = key;
     this.storyCast.forEach((a) => this.dropActor(a)); this.storyCast = [];
+    for (let k = 0; k < 4; k++) this.lod(this.npcs.length + k, 0, 0, 0, null);
     if (!sa) return;
     const spot = this.layout.spots['poi:' + sa.poi];
     if (!spot) return;
@@ -806,6 +864,33 @@ export class WorldView {
     }
   }
 
+  /** Cambia el aspecto de Chema en vivo (armario) */
+  setPlayerLook(ap: Appearance) {
+    this.group.remove(this.playerModel.root);
+    this.playerModel.dispose();
+    this.playerModel = new FighterModel(ap);
+    this.group.add(this.playerModel.root);
+  }
+
+  /** Armario: plano medio de Chema a la izquierda de la pantalla, girando despacio */
+  turntable = false;
+  wardrobeCam(on: boolean) {
+    this.turntable = on;
+    if (this.moto) this.moto.visible = !on;
+    if (!on) { this.endScene(); return; }
+    // busca una dirección con sitio para la cámara (sin paredes delante)
+    for (let k = 0; k < 8; k++) {
+      const y = this.yaw + (k % 2 ? 1 : -1) * Math.ceil(k / 2) * (Math.PI / 4);
+      let ok = true;
+      for (let s = 0.8; s <= 6.4; s += 0.6) if (this.layout.blocked(this.px + Math.sin(y) * s, this.pz + Math.cos(y) * s, 0.4)) { ok = false; break; }
+      if (ok) { this.yaw = y; break; }
+    }
+    const fx = Math.sin(this.yaw), fz = Math.cos(this.yaw);
+    // la cámara delante de Chema; mira un poco a su derecha para dejar sitio a la ventana
+    const rx = fz, rz = -fx;
+    this.cine = { cx: this.px + fx * 6, cz: this.pz + fz * 6, h: 1.7, lx: this.px + rx * 1.5, lz: this.pz + rz * 1.5, t: 0 };
+  }
+
   /** Quien habla gesticula un poco */
   speak(who: string) {
     for (const a of [...this.sceneCast, ...this.storyCast]) if (a.id === who) a.talk = 1.6;
@@ -821,8 +906,14 @@ export class WorldView {
   private updateActors(dt: number) {
     this.syncT -= dt;
     if (this.syncT <= 0) { this.syncT = 0.5; this.syncStoryCast(); }
+    this.storyCast.forEach((a, k) => {
+      const far = Math.hypot(this.px - a.x, this.pz - a.z) > 24;
+      a.model.root.visible = !far; if (far) a.tag.visible = false;
+      this.lod(this.npcs.length + k, a.x, a.z, a.yaw, far ? a.model.ap : null);
+    });
     for (const a of [...this.storyCast, ...this.sceneCast]) {
       const dx = this.px - a.x, dz = this.pz - a.z, d = Math.hypot(dx, dz);
+      if (!a.model.root.visible) continue;
       if (d < 10) { const ty = Math.atan2(dx, dz); let df = ty - a.yaw; while (df > Math.PI) df -= Math.PI * 2; while (df < -Math.PI) df += Math.PI * 2; a.yaw += df * (1 - Math.exp(-5 * dt)); }
       a.talk = Math.max(0, a.talk - dt);
       const base = this.idlePose(this.time, a.phase);
@@ -848,7 +939,7 @@ export class WorldView {
       this.stage.camera.lookAt(c.lx, 1.5, c.lz);
       return;
     }
-    const cy = this.camYaw, cp = this.camPitch, dist = this.camDist;
+    const cy = this.camYaw, cp = this.camPitch, dist = this.riding ? this.camDist + 3 + Math.min(4, this.motoV * 0.2) : this.camDist;
     const tx = this.px, ty = 1.5, tz = this.pz;
     const want = new THREE.Vector3(tx + Math.sin(cy) * Math.cos(cp) * dist, ty + Math.sin(cp) * dist, tz + Math.cos(cy) * Math.cos(cp) * dist);
     // si un edificio se interpone, acercar un poco la cámara
@@ -868,6 +959,8 @@ export class WorldView {
   /** Todos los objetivos visibles ahora mismo */
   allTargets(): Target[] {
     const out: Target[] = [];
+    if (this.riding) return [{ kind: 'moto', x: this.px, z: this.pz, label: 'Bajar de la moto' }];
+    if (this.moto) out.push({ kind: 'moto', x: this.moto.position.x, z: this.moto.position.z, label: 'Subir a la moto' });
     for (const n of this.npcs) if (n.model.root.visible) out.push({ ...n.t, label: n.t.label });
     for (const pm of this.poiMeshes) if (pm.obj.visible || (pm.p.kind === 'landmark' && this.bridge.poiVisible(pm.p))) if (this.bridge.poiVisible(pm.p)) out.push({ kind: 'poi', def: pm.p, x: pm.spot.x, z: pm.spot.z, label: pm.p.name });
     for (const g of GRAFFITI) if (!this.bridge.graffitiDone(g.id)) { const s = this.layout.spots['graffiti:' + g.id]; out.push({ kind: 'graffiti', id: g.id, x: s.x, z: s.z, label: g.name }); }

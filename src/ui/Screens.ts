@@ -1,4 +1,5 @@
 import type { ArenaId, Difficulty, FighterData } from '../combat/types';
+import { kbd } from '../input/glyphs';
 import type { Game, ResultInfo, SurvivalRun, VersusSetup } from '../game/Game';
 import { PERKS, perkById, type Perk } from '../modes/Survival';
 import type { PadAction } from '../input/PadNav';
@@ -48,11 +49,21 @@ export class Screens {
 
   isOpen() { return !!(this.cur || this.pauseEl); }
 
+  /** Barrido de transición estilo cómic: dos franjas ladeadas que cruzan la pantalla */
+  wipe() {
+    const w = el('div', { class: 'wipe' }, [el('i', { class: 'w1' }), el('i', { class: 'w2' }), el('i', { class: 'w3' })]);
+    document.body.appendChild(w);
+    setTimeout(() => w.remove(), 650);
+  }
+
   // ---------------------------------------------------------------- utilidades
   private set(node: HTMLElement, back: (() => void) | null = null) {
     // al repintar la misma pantalla (p. ej. al elegir un luchador) se conserva el elemento seleccionado
     let keep = -1;
     if (this.useFocus && this.cur && this.cur.className === node.className) keep = [...this.cur.querySelectorAll('[data-nav]')].indexOf(document.activeElement as Element);
+    // transición en barrido diagonal (rojo y negro) al cambiar de tipo de pantalla
+    const prevKind = this.cur?.className ?? '';
+    if (prevKind && prevKind !== node.className && !node.classList.contains('dialogue') && !this.cur!.classList.contains('dialogue')) this.wipe();
     this.clear();
     this.cur = node;
     this.onBack = back;
@@ -127,8 +138,10 @@ export class Screens {
     if (!this.cur) return;
     if (a === 'back') { if (this.cur.classList.contains('dialogue')) { this.cur.querySelector<HTMLElement>('.skip')?.click(); return; } if (this.onBack) { this.click('back'); this.onBack(); } return; }
     if (a === 'confirm' || a === 'start') {
-      if (this.confirmHandler) { this.confirmHandler(); return; }
       const f = document.activeElement as HTMLElement;
+      // en los diálogos, si hay una opción seleccionada se elige esa
+      if (this.cur.contains(f) && f.matches('.dchoice, .mapcard, .btn.go')) { f.click(); return; }
+      if (this.confirmHandler) { this.confirmHandler(); return; }
       if (this.cur.contains(f) && f.matches('[data-nav]')) { if (f instanceof HTMLInputElement) return; f.click(); }
       else this.focusFirst(this.cur);
     }
@@ -662,7 +675,7 @@ export class Screens {
     const nameBox = el('div', { class: 'dname' });
     const textBox = el('div', { class: 'dtext' });
     const port = el('div', { class: 'dport' });
-    const box = el('div', { class: 'dbox' }, [port, el('div', { class: 'dmain' }, [nameBox, textBox, el('div', { class: 'dnext' }, 'Clic / Espacio para continuar ▸')])]);
+    const box = el('div', { class: 'dbox' }, [port, el('div', { class: 'dmain' }, [nameBox, textBox, el('div', { class: 'dnext' }, [kbd('Clic / Espacio', 'A'), ' continuar ▸'])])]);
     const n = el('div', { class: 'screen dialogue' }, [el('button', { class: 'btn small skip', 'data-nav': true, onClick: () => finish() }, 'Saltar »'), box]);
     let typed = false;
     const full = () => lines[i].text;
@@ -857,7 +870,7 @@ export class Screens {
     const nameBox = el('div', { class: 'dname' });
     const textBox = el('div', { class: 'dtext' });
     const port = el('div', { class: 'dport' });
-    const hint = el('div', { class: 'dnext' }, 'Clic / Espacio para continuar ▸');
+    const hint = el('div', { class: 'dnext' }, [kbd('Clic / Espacio', 'A'), ' continuar ▸ ', kbd('Esc', 'B'), ' saltar']);
     const choiceBox = el('div', { class: 'dchoices' });
     const box = el('div', { class: 'dbox' }, [port, el('div', { class: 'dmain' }, [nameBox, textBox, hint, choiceBox])]);
     const n = el('div', { class: 'screen dialogue storyscene' }, [el('button', { class: 'btn small skip', 'data-nav': true, onClick: () => skipScene() }, 'Saltar escena »'), box]);
@@ -998,7 +1011,7 @@ export class Screens {
         sec('Trucos de combate', [['Contraataque', 'guardia justo antes de que llegue el golpe'], ['Revertir agarre', 'pulsa AGARRE justo antes de que te agarren'], ['Combos', '3 golpes seguidos activan el contador; a los 5 ganas momentum extra'], ['Adrenalina', 'la primera vez que bajas del 20 % de vida, 10 s de más pegada y velocidad'], ['Rope break', 'un pin pegado a las cuerdas se rompe solo (donde hay cuerdas que valgan)']]),
         sec('Por parejas', [['Relevo', 'cambia de compañero con R; el que descansa recupera vida y resistencia'], ['Dúos dinámicos', 'algunas parejas se llevan bien y combaten mejor juntas: Kongui y Darksinfacha, Petisui y Big Mac, Perro Cheetos y Petisui, y Pablo Motos con Ansol, Petisui o Elso'], ['Cae uno', 'entra el otro; si caen los dos, perdéis']]),
         sec('Mapas con reglas propias', [['Tribu de Kongui', 'sin ring; si empujas o golpeas hacia el público, te atacan todos'], ['Garito de las 3000', 'el árbitro no ve nada, sin cuenta fuera'], ['Jaula de Acero', 'no hay salida; los golpes fuertes contra la reja hacen daño extra'], ['Azotea de las 3000', 'ráfagas de viento que os empujan'], ['Playa de Honduras', 'la arena te frena un 10 %'], ['Oficina de Pablo Motos', 'Pablo lanza un maletín al que va perdiendo'], ['Ascensor 24/7', 'cabina de cristal sin ring; los pins se cuentan rapidísimo'], ['Estadio de Santiago', 'apagones: todo va más lento y el momentum sube más rápido']]),
-        sec('Historia · Hoyo (la ciudad)', [['Explorar', 'WASD o joystick para moverte · Shift o joystick a tope para correr · arrastra (o , y .) para girar la cámara'], ['La historia', 'sigue la flecha y la columna de luz dorada: cada capítulo empieza con una escena en la calle, sales a combatir y vuelves a Hoyo para ver qué pasa después'], ['E / Enter / HABLAR', 'hablar, comprar, entrenar, retar a un combate callejero, jugar un minijuego o empezar un capítulo de historia'], ['M · Q · I · Esc', 'mapa · misiones · bolsa (equipo) · pausa (también con los botones de arriba a la derecha)'], ['Progreso', 'ganas Hoyos y experiencia; el gimnasio y el equipo mejoran a Chema en TODOS los modos (tope +30 %)'], ['Qué hacer', '24 misiones, 30 pegatinas, 10 grafitis, 14 cartas de luchador, 4 minijuegos (pulso, comilona, pesca, tambores), apuestas de noche en el garito y la Torre Motos tras el final']]),
+        sec('Historia · Hoyo (la ciudad)', [['Explorar', 'WASD o joystick para moverte · Shift o joystick a tope para correr · arrastra (o , y .) para girar la cámara'], ['La historia', 'sigue la flecha y la columna de luz dorada: cada capítulo empieza con una escena en la calle, sales a combatir y vuelves a Hoyo para ver qué pasa después'], ['Con mando', 'stick izquierdo mover · stick derecho cámara · A hablar/usar · Y mapa · X bolsa · Select misiones · Start pausa · B cerrar ventanas'], ['La moto', 'está aparcada junto a tu piso (en el mapa, en morado): acércate y pulsa E / A para subir; Shift o RT para ir a tope'], ['En casa', 'cama (siesta o hasta la hora que quieras) y armario (traje y equipo, con espejo)'], ['Combates callejeros', 'se pelean en el Callejón de Hoyo: círculo de tiza, sin ring y sin árbitro que mire'], ['E / Enter / HABLAR', 'hablar, comprar, entrenar, retar a un combate callejero, jugar un minijuego o empezar un capítulo de historia'], ['M · Q · I · Esc', 'mapa · misiones · bolsa (equipo) · pausa (también con los botones de arriba a la derecha)'], ['Progreso', 'ganas Hoyos y experiencia; el gimnasio y el equipo mejoran a Chema en TODOS los modos (tope +30 %)'], ['Qué hacer', '24 misiones, 30 pegatinas, 10 grafitis, 14 cartas de luchador, 4 minijuegos (pulso, comilona, pesca, tambores), apuestas de noche en el garito y la Torre Motos tras el final']]),
         sec('Modos', [['Historia · Hoyo', 'la ciudad de Hoyo y la Temporada 5 en un solo modo: nueve capítulos con decisiones, combates especiales (parejas, jaula, supervivencia, Gauntlet, jefes) y tres finales, más misiones, minijuegos y combates callejeros'], ['Capítulos', 'repite capítulos ya jugados y mira los finales'], ['Versus', 'un combate (1 contra 1 o 2 contra 2) con dificultad y modificadores'], ['Torneo', 'Hoyo Champion, Hoyo Tag Champion (parejas) y Hoyo Femboy Champion'], ['Supervivencia', 'rivales sin fin, con mejoras tras cada victoria'], ['Entrenamiento', 'practica contra un rival que no puede ganarte'], ['Espectador', 'dos CPUs luchan, con narrador']]),
         sec('Trajes', [['Elige el traje', 'en la fila TRAJE al seleccionar a un luchador que tenga trajes alternativos (Pablo Motos, Petisui, Darksinfacha…)']]),
       ]),

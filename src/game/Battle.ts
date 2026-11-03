@@ -1,4 +1,5 @@
 import { Match, type MatchSummary } from '../combat/Match';
+import { padText } from '../input/glyphs';
 import type { ArenaId, Difficulty, FighterData, GameEvent, Input } from '../combat/types';
 import { emptyInput } from '../combat/types';
 import { AIController } from '../ai/AIController';
@@ -128,7 +129,7 @@ export class Battle {
     } else {
       if (this.opts.tips && this.tipT >= 0 && this.tipI < this.opts.tips.length && !this.paused) {
         this.tipT -= dt;
-        if (this.tipT <= 0) { this.game.hud.message('💡 ' + this.opts.tips[this.tipI++]); this.tipT = 9; }
+        if (this.tipT <= 0) { this.game.hud.message('💡 ' + padText(this.opts.tips[this.tipI++])); this.tipT = 9; }
       }
       this.acc += simDt;
       const events: GameEvent[] = [];

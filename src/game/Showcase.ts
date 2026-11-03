@@ -14,6 +14,7 @@ import { Playa } from '../arenas/Playa';
 import { Oficina } from '../arenas/Oficina';
 import { Ascensor } from '../arenas/Ascensor';
 import { Santiago } from '../arenas/Santiago';
+import { Callejon } from '../arenas/Callejon';
 
 export function makeArena(id: ArenaId, quality: Quality): Arena {
   switch (id) {
@@ -26,6 +27,7 @@ export function makeArena(id: ArenaId, quality: Quality): Arena {
     case 'oficina': return new Oficina({ quality });
     case 'ascensor': return new Ascensor({ quality });
     case 'santiago': return new Santiago({ quality });
+    case 'callejon': return new Callejon({ quality });
     default: return new Matamoros({ quality });
   }
 }

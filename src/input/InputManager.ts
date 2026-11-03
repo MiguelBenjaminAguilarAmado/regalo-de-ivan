@@ -45,6 +45,9 @@ export class InputManager {
       else if (e.button === 1) { this.edges.grab = true; e.preventDefault(); }
     };
     const mu = (e: MouseEvent) => this.mouseDown.delete(e.button);
+    const pd = (e: PointerEvent) => { this.lastDevice = e.pointerType === 'touch' ? 'tactil' : 'teclado'; };
+    window.addEventListener('pointerdown', pd, true);
+    this.cleanup.push(() => window.removeEventListener('pointerdown', pd, true));
     const cm = (e: Event) => { if (this.enabled) e.preventDefault(); };
     const blur = () => { this.keys.clear(); this.mouseDown.clear(); };
     window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);

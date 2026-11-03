@@ -9,6 +9,7 @@ import { TouchControls } from '../ui/TouchControls';
 import { Screens } from '../ui/Screens';
 import { Showcase } from './Showcase';
 import { PadNav, type PadAction } from '../input/PadNav';
+import { setPadMode } from '../input/glyphs';
 import { el } from '../ui/dom';
 import { Battle, type BattleOpts } from './Battle';
 import { Audio } from '../audio/Audio';
@@ -85,6 +86,7 @@ export class Game {
     // el gimnasio y el equipo del mundo abierto mejoran a Chema en todos los modos
     setChemaHook((f) => (this.save.world ? { ...f, fullStats: applyBonus(f.fullStats, bonusOf(this.save.world, ITEMS)) } : f));
     this.padNav = new PadNav((a) => this.onPad(a));
+    this.padNav.onActivity = () => { this.input.lastDevice = 'mando'; };
     window.addEventListener('gamepadconnected', (e) => { this.toast('🎮 Mando conectado: ' + (e as GamepadEvent).gamepad.id.split('(')[0].trim().slice(0, 40)); });
     window.addEventListener('gamepaddisconnected', () => { this.toast('Mando desconectado'); this.autoPause(); });
     this.input.onPause = () => this.togglePause();
@@ -497,6 +499,7 @@ export class Game {
   /** Mando: acciones de menú y de espectador */
   private onPad(a: PadAction) {
     if (this.screens.isOpen()) { this.screens.pad(a); return; }
+    if (this.world.active) { this.world.pad(a); return; }
     const b = this.battle;
     if (b && b.opts.spectate && b.phase !== 'intro') {
       if (a === 'start') this.togglePause();
@@ -601,7 +604,8 @@ export class Game {
     else if (this.battle) this.battle.update(dt);
     else if (this.showcase) { this.showcase.update(dt); Audio.tickCrowd(dt); }
     const spectating = !!(this.battle?.opts.spectate && !this.battle.paused);
-    this.padNav.update(dt, this.screens.isOpen() || spectating);
+    this.padNav.update(dt, this.screens.isOpen() || spectating || this.world.active);
+    setPadMode(this.input.lastDevice === 'mando');
     this.stage.render();
     this.watchPerf(dt);
     requestAnimationFrame(this.frame);

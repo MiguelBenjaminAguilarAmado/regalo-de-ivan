@@ -10,6 +10,9 @@ El zoom de la página está bloqueado (pellizco, doble toque y Ctrl + rueda) par
 ### Hoyo, la ciudad
 - Gente paseando (con bocadillos de lo que comentan según cómo vaya la historia), coches que frenan si te cruzas, luchadores entrenando por la calle, un ring de exhibición en la plaza con público y carteles con las caras de los luchadores.
 - Mapa (botón MAPA o tecla M) con calles, barrios, luchadores y la estrella dorada del siguiente capítulo; arriba siempre ves el objetivo con una flecha y la distancia.
+- La ciudad es de una pieza (≈340 m de lado): cuatro grandes avenidas entre ocho distritos y, dentro de cada uno, su trazado propio — avenidas anchas en la Torre, bulevar en Manchester, callejuelas en las 3000, naves en el polígono, paseo marítimo en la playa y un parque en la Aldea. Se define en `content/mundo.ts` (`streets` de cada distrito) y se genera en `src/world/layout.ts`.
+- Moto para cruzar la ciudad, taxis de Hoyo en cada parada, cama y armario en casa, y los combates callejeros en su propio escenario: el Callejón de Hoyo.
+- Con mando: stick derecho = cámara, A = hablar/usar, Y = mapa, X = bolsa, Select = misiones; todos los textos de botones pasan a A/B/X/Y.
 - El guion que une la ciudad con la historia (prólogo, llegada a cada capítulo, lo que pasa después y lo que dice la gente) está en **`content/historia-ciudad.ts`**.
 
 ## Cómo jugarlo

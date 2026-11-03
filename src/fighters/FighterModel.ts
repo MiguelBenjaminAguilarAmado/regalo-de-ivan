@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { Appearance } from '../combat/types';
 import { JOINTS, type Joint, type Pose } from './Pose';
 
@@ -89,6 +90,63 @@ export class FighterModel {
     this.glow.position.y = 1.0;
     this.glow.visible = false;
     this.root.add(this.glow);
+    this.bake();
+  }
+
+  /**
+   * Rendimiento: junta en una sola malla las piezas que cuelgan del mismo hueso y comparten material
+   * (de ~70 mallas por luchador a ~20). No toca las piezas a las que el código hace referencia (props, lengua, aura…).
+   */
+  private bake() {
+    const keep = new Set<THREE.Object3D>();
+    for (const v of Object.values(this)) if (v instanceof THREE.Object3D && v !== this.root && v !== this.body && v !== this.hips) v.traverse((o) => keep.add(o));
+    for (const k of JOINTS) keep.delete(this.j[k]);
+    const parents = new Set<THREE.Object3D>();
+    this.root.traverse((o) => { if ((o as THREE.Mesh).isMesh && o.parent && !keep.has(o)) parents.add(o.parent); });
+    const merged: THREE.Mesh[] = [];
+    for (const parent of parents) {
+      // piezas lisas (sin textura) → una malla con colores por vértice; las demás, por material
+      const byMat = new Map<THREE.Material | string, THREE.Mesh[]>();
+      for (const c of parent.children) {
+        const m = c as THREE.Mesh;
+        if (!m.isMesh || keep.has(m) || m.children.length || Array.isArray(m.material)) continue;
+        const mt = m.material as THREE.MeshStandardMaterial;
+        const plain = mt.isMeshStandardMaterial && !mt.map && !mt.transparent && mt.emissive.getHex() === 0;
+        const key: THREE.Material | string = plain ? (mt.metalness > 0.5 ? 'metal' : 'plain') : mt;
+        const arr = byMat.get(key); if (arr) arr.push(m); else byMat.set(key, [m]);
+      }
+      for (const [key, list] of byMat) {
+        if (list.length < 2) continue;
+        const plain = typeof key === 'string';
+        const geos = list.map((m) => {
+          m.updateMatrix();
+          let g = m.geometry.index ? m.geometry.toNonIndexed() : m.geometry.clone();
+          g.applyMatrix4(m.matrix);
+          if (!g.attributes.uv) g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 2), 2));
+          if (!g.attributes.normal) g.computeVertexNormals();
+          for (const k of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(k)) g.deleteAttribute(k);
+          if (plain) {
+            const c = (m.material as THREE.MeshStandardMaterial).color, n = g.attributes.position.count, arr = new Float32Array(n * 3);
+            for (let i = 0; i < n; i++) { arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b; }
+            g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
+          }
+          return g;
+        });
+        const mat: THREE.Material = plain
+          ? new THREE.MeshStandardMaterial({ vertexColors: true, roughness: list.reduce((a, m) => a + (m.material as THREE.MeshStandardMaterial).roughness, 0) / list.length, metalness: key === 'metal' ? 0.8 : 0.05 })
+          : key as THREE.Material;
+        const geo = mergeGeometries(geos, false);
+        geos.forEach((g) => g.dispose());
+        if (!geo) continue;
+        const cast = list.some((m) => m.castShadow);
+        for (const m of list) { parent.remove(m); m.geometry.dispose(); }
+        const mm = new THREE.Mesh(geo, mat); mm.castShadow = cast; mm.receiveShadow = false;
+        parent.add(mm); merged.push(mm);
+      }
+    }
+    this.shadowMeshes = [];
+    this.root.traverse((o) => { if ((o as THREE.Mesh).isMesh && o !== this.glow && (o as THREE.Mesh).castShadow) this.shadowMeshes.push(o as THREE.Mesh); });
+    void merged;
   }
 
   // ---------------------------------------------------------------- utilidades de construcción

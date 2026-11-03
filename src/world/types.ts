@@ -20,6 +20,12 @@ export interface DistrictDef {
   height: [number, number];
   /** Zona central libre de edificios (radio) */
   freeRadius: number;
+  /**
+   * Trazado de calles del distrito (desplazamientos desde el centro): calles verticales `xs`, horizontales `zs`,
+   * ancho de calzada `w`; `alleys` = callejuelas que parten las manzanas; `boulevard` = gran bulevar (z);
+   * `north` = las calles verticales solo llegan hasta ese z (la playa: al sur del paseo no hay edificios).
+   */
+  streets: { xs: number[]; zs: number[]; w: number; alleys?: boolean; boulevard?: number; north?: number };
   arena: ArenaId;
   music: MusicId;
   unlock?: UnlockRule;
