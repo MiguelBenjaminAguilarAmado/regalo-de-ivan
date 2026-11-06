@@ -32,12 +32,27 @@ export type DualMsg =
   | { t: 'cmd'; c: string; i?: number }
   | { t: 'pad'; b: boolean[]; v: number[]; a: number[] };
 
-export function openChannel(): BroadcastChannel | null {
-  try { return new BroadcastChannel(CHANNEL); } catch { return null; }
+/** Canal entre pantallas: puente nativo dentro del APK de Android, BroadcastChannel en el navegador */
+export interface DualChannel { postMessage(m: DualMsg): void; onmessage: ((e: { data: DualMsg }) => void) | null }
+
+interface AndroidBridge { post(json: string): void; hasSecondScreen(): boolean; side(): string }
+export const androidBridge = (): AndroidBridge | null => (window as unknown as { HoyoAndroid?: AndroidBridge }).HoyoAndroid ?? null;
+
+export function openChannel(): DualChannel | null {
+  const br = androidBridge();
+  if (br) {
+    const ch: DualChannel = { postMessage: (m) => br.post(JSON.stringify(m)), onmessage: null };
+    (window as unknown as { __hoyoDual: (m: DualMsg) => void }).__hoyoDual = (m) => ch.onmessage?.({ data: m });
+    return ch;
+  }
+  try { return new BroadcastChannel(CHANNEL) as unknown as DualChannel; } catch { return null; }
 }
 
 /** Abre la ventana de abajo: en la otra pantalla si el navegador sabe colocarla, si no en una ventana/pestaña nueva */
 export async function openCompanion(): Promise<'otra-pantalla' | 'ventana' | 'bloqueada'> {
+  // en el APK de Android la pantalla de abajo la abre la propia app (si el aparato tiene segunda pantalla)
+  const br = androidBridge();
+  if (br) return br.hasSecondScreen() ? 'otra-pantalla' : 'bloqueada';
   const url = location.pathname + '?pantalla=abajo';
   try {
     const w = window as unknown as { getScreenDetails?: () => Promise<{ screens: { availLeft: number; availTop: number; availWidth: number; availHeight: number }[]; currentScreen: unknown }> };

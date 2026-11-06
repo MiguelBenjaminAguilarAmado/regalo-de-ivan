@@ -53,6 +53,16 @@ Cómo ponerlo:
 
 Las dos ventanas se hablan por `BroadcastChannel`, así que tienen que ser **del mismo navegador**. Si tocas la pantalla de abajo y el mando deja de llegar arriba, no pasa nada: la ventana de abajo reenvía el mando al juego.
 
+## APK para Android (AYN Thor)
+
+Descarga directa: **`docs/el-hoyo.apk`** (también en GitHub Pages: `…/regalo-de-ivan/el-hoyo.apk`).
+- Lleva el juego dentro: funciona sin internet (solo las fuentes tipográficas vienen de internet; si no hay, usa otras).
+- Pantalla completa en horizontal, pantalla siempre encendida, mando de la Thor directo y el botón B no cierra el juego.
+- **Dos pantallas automáticas:** si el aparato tiene una segunda pantalla (la de abajo de la Thor), la app abre en ella la pantalla de abajo sola y las dos se hablan por un puente nativo.
+- Para instalarlo: copia el APK a la consola (o descárgalo desde ella), ábrelo y permite «instalar apps de origen desconocido».
+
+Para compilarlo: `./scripts/build-apk.sh` (necesita el SDK de Android en `ANDROID_HOME` con `platforms;android-35` y `build-tools;35.0.0`, y Gradle 8.9+). El proyecto Android está en `android/`. La clave de firma NO va en el repositorio: ponla en `android/keystore.properties` (`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; está en `.gitignore`); sin ella se firma con la clave de depuración. Un APK nuevo solo se instala encima del anterior (sin perder la partida) si está firmado con la misma clave.
+
 ## Controles
 
 | Acción | Teclado y ratón | Mando | Móvil |

@@ -25,7 +25,7 @@ export class Companion {
     this.root = el('div', { class: 'croot' }, [this.bar, this.body]);
     parent.appendChild(this.root);
     if (!this.ch) { this.waiting('Este navegador no permite conectar las dos pantallas (falta BroadcastChannel).'); return; }
-    this.ch.onmessage = (e: MessageEvent<DualMsg>) => this.onMsg(e.data);
+    this.ch.onmessage = (e: { data: DualMsg }) => this.onMsg(e.data);
     this.post({ t: 'hello' });
     setInterval(() => this.post({ t: 'ping', from: 'abajo' }), 1000);
     // si esta ventana tiene el foco, el mando se reenvía al juego para que no deje de responder

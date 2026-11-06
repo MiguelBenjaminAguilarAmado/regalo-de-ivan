@@ -1,0 +1,34 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'es.elhoyo.wrestling'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'es.elhoyo.wrestling'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+    // La clave de firma NO va en el repositorio: se lee de android/keystore.properties (ignorado por git).
+    // Sin ese archivo, el APK se firma con la clave de depuración de tu ordenador.
+    def ksFile = rootProject.file('keystore.properties')
+    def ks = new Properties()
+    if (ksFile.exists()) ksFile.withInputStream { ks.load(it) }
+    signingConfigs {
+        hoyo {
+            if (ks['storeFile']) {
+                storeFile rootProject.file(ks['storeFile'])
+                storePassword ks['storePassword']
+                keyAlias ks['keyAlias']
+                keyPassword ks['keyPassword']
+            }
+        }
+    }
+    buildTypes {
+        release { minifyEnabled false; signingConfig ks['storeFile'] ? signingConfigs.hoyo : signingConfigs.debug }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    aaptOptions { noCompress 'js', 'css', 'html', 'json', 'png', 'jpg', 'jpeg' }
+    lint { checkReleaseBuilds false; abortOnError false }
+}

@@ -12,7 +12,7 @@ export class DualHost {
 
   constructor(private g: Game) {
     if (!this.ch) return;
-    this.ch.onmessage = (e: MessageEvent<DualMsg>) => this.onMsg(e.data);
+    this.ch.onmessage = (e: { data: DualMsg }) => this.onMsg(e.data);
   }
 
   /** ¿Hay una pantalla de abajo conectada ahora mismo? */
