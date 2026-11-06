@@ -1,3 +1,4 @@
+import { getPad } from './padSource';
 /**
  * Navegación de menús con mando: cruceta / stick para moverse, A para aceptar, B para volver.
  * El combate lo gestiona InputManager; esto solo actúa cuando hay pantallas abiertas.
@@ -14,8 +15,7 @@ export class PadNav {
 
   /** Debe llamarse cada frame. `active` = hay una pantalla/menú que manejar. */
   update(dt: number, active: boolean) {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const pad = pads && Array.from(pads).find((p) => p && p.connected);
+    const pad = getPad();
     if (!pad) { this.prev = []; return; }
     const b = (i: number) => !!pad.buttons[i]?.pressed;
     const now = pad.buttons.map((x) => x.pressed);

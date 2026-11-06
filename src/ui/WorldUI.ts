@@ -126,44 +126,7 @@ export class WorldUI {
   }
 
   /** Dibuja un mapa en un canvas; `range` > 0 = minimapa centrado en el jugador (metros visibles a cada lado) */
-  paintMap(cv: HTMLCanvasElement, m: MapData, size: number, range: number) {
-    const g = cv.getContext('2d')!;
-    g.clearRect(0, 0, size, size);
-    g.fillStyle = 'rgba(10,8,8,0.78)'; g.fillRect(0, 0, size, size);
-    const full = range <= 0;
-    const sc = full ? size / (m.worldSize * 2) : size / (range * 2);
-    const ox = full ? size / 2 : size / 2 - m.player.x * sc, oz = full ? size / 2 : size / 2 - m.player.z * sc;
-    const X = (x: number) => ox + x * sc, Z = (z: number) => oz + z * sc;
-    g.save(); g.beginPath(); g.rect(0, 0, size, size); g.clip();
-    for (const d of m.districts) {
-      g.fillStyle = d.open ? d.color : '#3a3a3a'; g.globalAlpha = d.open ? 0.75 : 0.5;
-      g.fillRect(X(d.cx - d.w / 2), Z(d.cz - d.d / 2), d.w * sc, d.d * sc);
-      g.globalAlpha = 1; g.strokeStyle = d.open ? '#fff3' : '#c1272d88'; g.lineWidth = 1; g.strokeRect(X(d.cx - d.w / 2), Z(d.cz - d.d / 2), d.w * sc, d.d * sc);
-      if (full) { g.fillStyle = '#fff'; g.font = '700 12px sans-serif'; g.textAlign = 'center'; g.fillText(d.open ? d.name : '🔒 ' + d.name, X(d.cx), Z(d.cz - d.d / 2) + 14); }
-    }
-    if (m.roads) {
-      g.lineCap = 'butt';
-      for (const r of m.roads) {
-        g.strokeStyle = r.kind === 'avenue' ? '#e8d27a' : r.kind === 'alley' ? 'rgba(30,28,26,0.9)' : 'rgba(34,34,40,0.95)';
-        g.lineWidth = Math.max(r.kind === 'alley' ? 1 : 1.5, r.w * sc);
-        g.beginPath(); g.moveTo(X(r.x1), Z(r.z1)); g.lineTo(X(r.x2), Z(r.z2)); g.stroke();
-      }
-      g.fillStyle = '#b9ab92'; g.beginPath(); g.arc(X(0), Z(0), 22 * sc, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#4f8a3a'; g.beginPath(); g.arc(X(0), Z(0), 13 * sc, 0, Math.PI * 2); g.fill();
-    }
-    for (const k of m.markers) {
-      const x = X(k.x), z = Z(k.z);
-      g.fillStyle = k.kind === 'story' ? '#ffd45e' : k.kind === 'quest' ? '#6ad8ff' : k.kind === 'npc' ? '#ff8a6a' : k.kind === 'moto' ? '#d36aff' : '#cfcfcf';
-      g.beginPath(); g.arc(x, z, k.kind === 'story' ? 4.5 : k.kind === 'poi' ? 2.2 : 3, 0, Math.PI * 2); g.fill();
-      if (k.kind === 'story') { g.strokeStyle = '#000'; g.lineWidth = 1.5; g.stroke(); }
-      if (full && k.label && (k.kind === 'story' || k.kind === 'quest' || k.kind === 'npc' || k.kind === 'moto')) { g.fillStyle = '#fff'; g.font = '600 11px sans-serif'; g.textAlign = 'left'; g.fillText(k.label, x + 6, z + 3); }
-    }
-    // jugador
-    g.translate(X(m.player.x), Z(m.player.z)); g.rotate(-m.player.yaw + Math.PI);
-    g.fillStyle = '#4aa8ff'; g.beginPath(); g.moveTo(0, -7); g.lineTo(5, 6); g.lineTo(-5, 6); g.closePath(); g.fill();
-    g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
-    g.restore();
-  }
+  paintMap(cv: HTMLCanvasElement, m: MapData, size: number, range: number) { paintMap(cv, m, size, range); }
 
   // ---------------------------------------------------------------- ventanas
   /** Abre una ventana modal; devuelve cerrar() */
@@ -241,4 +204,44 @@ export class WorldUI {
 
   /** Contenedor para los minijuegos */
   get host() { return this.modalHost; }
+}
+
+/** Dibuja un mapa en un canvas; `range` > 0 = minimapa centrado en el jugador (metros visibles a cada lado) */
+export function paintMap(cv: HTMLCanvasElement, m: MapData, size: number, range: number) {
+  const g = cv.getContext('2d')!;
+  g.clearRect(0, 0, size, size);
+  g.fillStyle = 'rgba(10,8,8,0.78)'; g.fillRect(0, 0, size, size);
+  const full = range <= 0;
+  const sc = full ? size / (m.worldSize * 2) : size / (range * 2);
+  const ox = full ? size / 2 : size / 2 - m.player.x * sc, oz = full ? size / 2 : size / 2 - m.player.z * sc;
+  const X = (x: number) => ox + x * sc, Z = (z: number) => oz + z * sc;
+  g.save(); g.beginPath(); g.rect(0, 0, size, size); g.clip();
+  for (const d of m.districts) {
+    g.fillStyle = d.open ? d.color : '#3a3a3a'; g.globalAlpha = d.open ? 0.75 : 0.5;
+    g.fillRect(X(d.cx - d.w / 2), Z(d.cz - d.d / 2), d.w * sc, d.d * sc);
+    g.globalAlpha = 1; g.strokeStyle = d.open ? '#fff3' : '#c1272d88'; g.lineWidth = 1; g.strokeRect(X(d.cx - d.w / 2), Z(d.cz - d.d / 2), d.w * sc, d.d * sc);
+    if (full) { g.fillStyle = '#fff'; g.font = '700 12px sans-serif'; g.textAlign = 'center'; g.fillText(d.open ? d.name : '🔒 ' + d.name, X(d.cx), Z(d.cz - d.d / 2) + 14); }
+  }
+  if (m.roads) {
+    g.lineCap = 'butt';
+    for (const r of m.roads) {
+      g.strokeStyle = r.kind === 'avenue' ? '#e8d27a' : r.kind === 'alley' ? 'rgba(30,28,26,0.9)' : 'rgba(34,34,40,0.95)';
+      g.lineWidth = Math.max(r.kind === 'alley' ? 1 : 1.5, r.w * sc);
+      g.beginPath(); g.moveTo(X(r.x1), Z(r.z1)); g.lineTo(X(r.x2), Z(r.z2)); g.stroke();
+    }
+    g.fillStyle = '#b9ab92'; g.beginPath(); g.arc(X(0), Z(0), 22 * sc, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#4f8a3a'; g.beginPath(); g.arc(X(0), Z(0), 13 * sc, 0, Math.PI * 2); g.fill();
+  }
+  for (const k of m.markers) {
+    const x = X(k.x), z = Z(k.z);
+    g.fillStyle = k.kind === 'story' ? '#ffd45e' : k.kind === 'quest' ? '#6ad8ff' : k.kind === 'npc' ? '#ff8a6a' : k.kind === 'moto' ? '#d36aff' : '#cfcfcf';
+    g.beginPath(); g.arc(x, z, k.kind === 'story' ? 4.5 : k.kind === 'poi' ? 2.2 : 3, 0, Math.PI * 2); g.fill();
+    if (k.kind === 'story') { g.strokeStyle = '#000'; g.lineWidth = 1.5; g.stroke(); }
+    if (full && k.label && (k.kind === 'story' || k.kind === 'quest' || k.kind === 'npc' || k.kind === 'moto')) { g.fillStyle = '#fff'; g.font = '600 11px sans-serif'; g.textAlign = 'left'; g.fillText(k.label, x + 6, z + 3); }
+  }
+  // jugador
+  g.translate(X(m.player.x), Z(m.player.z)); g.rotate(-m.player.yaw + Math.PI);
+  g.fillStyle = '#4aa8ff'; g.beginPath(); g.moveTo(0, -7); g.lineTo(5, 6); g.lineTo(-5, 6); g.closePath(); g.fill();
+  g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.stroke();
+  g.restore();
 }

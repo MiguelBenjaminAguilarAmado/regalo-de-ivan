@@ -16,6 +16,7 @@ import { WorldUI, type MapData } from '../ui/WorldUI';
 import { WorldView, type Target, type WorldBridge } from './WorldView';
 import { MINI_INFO, runMinigame, type MiniId } from './minigames';
 import { DAY_MIN } from '../modes/World';
+import { openCompanion } from '../dual/DualLink';
 import { applyChoice, chapterState, fightsFor, lineVisible, newProgress, nextChapter, scenesFor, type Flags, type StoryChapter, type StoryChoice, type StoryProgress, type StoryScene } from '../modes/Story';
 import { scaleOpponent } from '../modes/Survival';
 import { simulateMatch } from '../modes/simulate';
@@ -291,6 +292,24 @@ export class WorldController {
       this.ui.setObjective({ title: `HISTORIA · CAPÍTULO ${n}: ${ch.title.toUpperCase()}`, text: CITY_BEATS[ch.id]?.goal ?? 'Sigue la estrella dorada', angle: Math.atan2(r, f), dist: Math.hypot(dx, dz) });
     } else this.ui.setObjective(ch ? null : { title: 'HISTORIA COMPLETADA', text: 'Hoyo es tuyo: misiones, Torre Motos, cartas y pegatinas', angle: null, dist: 0 });
   }
+
+  // ------------------------------------------------------------------ pantalla doble (AYN Thor): datos para la pantalla de abajo
+  dualMap(mini: boolean): MapData | null { return this.view ? this.mapData(mini) : null; }
+  dualHud() {
+    const p = this.progress, d = this.view?.district ? DIST_MAP.get(this.view.district) : null;
+    return { level: p.level, money: p.money, clock: clockText(p), day: dayOf(p), night: isNight(p), district: d?.name ?? 'Calles de Hoyo', points: p.points, xp: p.xp, xpNeed: xpForLevel(p.level) };
+  }
+  dualObjective() {
+    const ch = this.pendingChapter();
+    if (!ch) return { title: 'HISTORIA COMPLETADA', text: 'Hoyo es tuyo: misiones, Torre Motos, cartas y pegatinas' };
+    const n = CHAPTERS.findIndex((c) => c.id === ch.id) + 1;
+    return { title: `CAPÍTULO ${n}: ${ch.title.toUpperCase()}`, text: CITY_BEATS[ch.id]?.goal ?? 'Sigue la estrella dorada' };
+  }
+  dualQuest() {
+    const p = this.progress, aq = activeQuests(p, QUESTS)[0];
+    return aq ? { title: aq.title, step: aq.steps[p.quests[aq.id].step]?.text ?? '' } : null;
+  }
+  dualPrompt() { return this.view?.target && !this.busy ? this.promptFor(this.view.target) : null; }
 
   private mapData(mini = false): MapData {
     const view = this.view!;
@@ -1021,6 +1040,7 @@ export class WorldController {
       ['Misiones (Q)', 'Diario de misiones', () => { this.ui.closeModal(); this.questsPanel(); }],
       ['Inventario (I)', 'Equipo, consumables y traje', () => { this.ui.closeModal(); this.inventoryPanel(); }],
       ['Armario', 'Cambia de traje y de equipo', () => { this.ui.closeModal(); this.wardrobePanel(); }],
+      ['Pantalla de abajo (AYN Thor)', this.g.dual.connected ? 'Conectada ✔' : 'Abre el mapa y los botones en la segunda pantalla', () => { this.ui.closeModal(); void openCompanion().then((r) => this.ui.toast(r === 'bloqueada' ? 'El navegador ha bloqueado la ventana: abre la dirección del juego + «?pantalla=abajo»' : '📱 Lleva la ventana nueva a la pantalla de abajo', 'info')); }],
       ['Mapa (M)', 'Distritos y marcadores', () => { this.ui.closeModal(); this.mapPanel(); }],
       ['Estadísticas', 'Tu progreso en Hoyo', () => { this.ui.closeModal(); this.statsPanel(); }],
       ['Capítulos y finales', 'Repite capítulos ya jugados o mira los finales', () => { this.ui.closeModal(); this.leave(true); this.g.goMenu(); this.g.screens.showStoryMenu(); }],

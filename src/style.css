@@ -483,3 +483,5 @@ body.pad-mode .btn:focus { transform: translateX(10px) skewX(-4deg); border-left
 .devpanel .chip { min-height: 36px; font-size: 13px; }
 .devjson { width: 100%; min-height: 50vh; background: #050605; color: #b8f0c8; border: 1px solid #3aff9a55; font: 11px/1.3 ui-monospace, monospace; padding: 8px; }
 .devpanel.hidden, .devbtn.hidden { display: none !important; }
+/* pantalla doble: con la pantalla de abajo conectada, arriba sobran el minimapa y los botones (están abajo) */
+body.dual-on .wmini-map, body.dual-on .wbtns, body.dual-on .wact { display: none !important; }

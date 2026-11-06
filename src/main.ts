@@ -18,6 +18,11 @@ window.addEventListener('error', (e) => {
   if (b) b.innerHTML = `<div class="boot-err"><b>Algo ha fallado al arrancar.</b><pre>${String(e.message)}</pre><p>Comprueba que tu navegador soporta WebGL 2.</p></div>`;
 });
 
-const game = new Game(canvas, ui);
-(window as any).__hoyo = game;
-game.boot().then(() => document.getElementById('boot')?.classList.add('done'));
+// Pantalla doble (AYN Thor): «?pantalla=abajo» abre la pantalla de abajo en vez del juego
+if (new URLSearchParams(location.search).get('pantalla') === 'abajo') {
+  import('./dual/Companion').then(({ Companion }) => { (window as any).__abajo = new Companion(ui); document.getElementById('boot')?.classList.add('done'); });
+} else {
+  const game = new Game(canvas, ui);
+  (window as any).__hoyo = game;
+  game.boot().then(() => document.getElementById('boot')?.classList.add('done'));
+}

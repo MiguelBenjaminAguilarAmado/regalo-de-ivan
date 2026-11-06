@@ -39,6 +39,20 @@ npm run preview    # sirve dist/ para comprobarla
 La carpeta `dist/` se puede subir a cualquier hosting estático (itch.io, GitHub Pages, Netlify…).
 No se abre con doble clic en `index.html`: necesita un servidor web (los módulos de JS lo exigen).
 
+## Pantalla doble (AYN Thor)
+
+El juego va en la pantalla de **arriba** y la de **abajo** hace de panel táctil:
+- **En la ciudad:** mapa en vivo (cerca / barrio / ciudad entera), objetivo de la historia, misión activa y botones (usar, misiones, bolsa, armario, mapa, cerrar, pausa).
+- **En combate:** barras de vida, resistencia y momentum de los dos, el tiempo, tus golpes con los botones de la Thor (A/B/X/Y, LB, RB) y botones de burla, finisher, relevo y pausa.
+- **En las escenas:** el diálogo en grande y las opciones para elegirlas tocando.
+
+Cómo ponerlo:
+1. Abre el juego en la pantalla de arriba (en Chrome).
+2. En **Ajustes → Abrir pantalla de abajo** (o en la pausa de la ciudad), o abre a mano la misma dirección acabada en `?pantalla=abajo` en **otra ventana del mismo navegador**.
+3. Con el botón de cambiar de pantalla de la Thor, deja esa ventana abajo. Se conecta sola (arriba sale «📱 Pantalla de abajo conectada») y arriba desaparecen el minimapa y los botones, que ya están abajo.
+
+Las dos ventanas se hablan por `BroadcastChannel`, así que tienen que ser **del mismo navegador**. Si tocas la pantalla de abajo y el mando deja de llegar arriba, no pasa nada: la ventana de abajo reenvía el mando al juego.
+
 ## Controles
 
 | Acción | Teclado y ratón | Mando | Móvil |

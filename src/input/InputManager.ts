@@ -1,6 +1,7 @@
 import type { Input } from '../combat/types';
 import { emptyInput } from '../combat/types';
 import type { CameraRig } from '../render/CameraRig';
+import { getPad } from './padSource';
 
 type Edge = 'light' | 'heavy' | 'grab' | 'taunt' | 'finisher' | 'tag';
 
@@ -60,6 +61,9 @@ export class InputManager {
     });
   }
 
+  /** Botón pulsado en la pantalla de abajo (no cambia el tipo de mando que se muestra) */
+  pressRemote(a: string) { if (this.enabled && a in this.edges) this.edges[a as Edge] = true; }
+
   press(a: Edge) { if (this.enabled) { this.edges[a] = true; this.lastDevice = 'tactil'; } }
 
   reset() {
@@ -71,8 +75,7 @@ export class InputManager {
 
   /** Primer mando conectado */
   activePad(): Gamepad | null {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    return (pads && Array.from(pads).find((p) => p && p.connected)) || null;
+    return getPad() as Gamepad | null;
   }
   get padConnected() { return !!this.activePad(); }
 

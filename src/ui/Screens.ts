@@ -1,6 +1,7 @@
 import type { ArenaId, Difficulty, FighterData } from '../combat/types';
 import { kbd } from '../input/glyphs';
 import { voice } from '../content/voices';
+import { openCompanion } from '../dual/DualLink';
 import type { Game, ResultInfo, SurvivalRun, VersusSetup } from '../game/Game';
 import { PERKS, perkById, type Perk } from '../modes/Survival';
 import type { PadAction } from '../input/PadNav';
@@ -1101,6 +1102,7 @@ export class Screens {
         toggle('Voz del árbitro (cuenta del pin)', 'voice'), toggle('Sacudida de cámara', 'shake'), toggle('Mostrar FPS', 'fps'),
         select('Calidad gráfica', 'quality', [['auto', 'Auto'], ['baja', 'Baja'], ['media', 'Media'], ['alta', 'Alta']]),
         select('Controles táctiles', 'touch', [['auto', 'Auto'], ['on', 'Siempre'], ['off', 'Nunca']]),
+        el('div', { class: 'srow' }, [el('span', {}, 'Pantalla doble (AYN Thor): ' + (g.dual.connected ? 'conectada ✔' : 'abre la ventana de abajo')), this.btn('Abrir pantalla de abajo', () => { void openCompanion().then((r) => g.toast(r === 'otra-pantalla' ? '📱 Abierta en la otra pantalla' : r === 'ventana' ? '📱 Ventana abierta: llévala a la pantalla de abajo con el botón de cambiar de pantalla' : 'El navegador ha bloqueado la ventana: abre a mano esta dirección + «?pantalla=abajo»')); }, 'small')]),
         el('div', { class: 'srow' }, [el('span', {}, 'Modo desarrollador (F2 o botón DEV)'), (() => { const on = () => !!g.save.dev?.on; const b = el('button', { class: 'chip' + (on() ? ' on' : ''), 'data-nav': true, onClick: () => { g.save.dev = { stats: {}, ...(g.save.dev ?? {}), on: !on() }; b.classList.toggle('on', on()); b.textContent = on() ? 'Sí' : 'No'; g.commitSettings(); g.dev.sync(); this.click(); } }, on() ? 'Sí' : 'No'); return b; })()]),
         el('div', { class: 'srow' }, [el('span', {}, 'Progreso guardado'), this.btn('Borrar', () => { if (confirm('¿Borrar victorias, logros y luchadores desbloqueados?')) { localStorage.removeItem('el-hoyo-wrestling-v1'); location.reload(); } }, 'small danger')]),
       ]),
